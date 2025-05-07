@@ -9,10 +9,11 @@ import csv
 import json
 import pandas as pd
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import google.generativeai as genai
 from dotenv import load_dotenv
 from pathlib import Path
+import logging
 
 # Cargar variables de entorno
 load_dotenv()
@@ -20,6 +21,10 @@ load_dotenv()
 # Configurar Gemini API
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class GeminiFoodProcessor:
     def __init__(self, data_path: str = None):

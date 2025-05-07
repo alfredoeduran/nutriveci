@@ -1,3 +1,6 @@
+"""
+Conexión y operaciones con Supabase.
+"""
 from functools import lru_cache
 from typing import Dict, List, Optional, Union
 
@@ -20,6 +23,7 @@ def get_supabase_client() -> Client:
             "SUPABASE_URL y SUPABASE_KEY deben estar configurados en las variables de entorno"
         )
     
+    # Crear cliente sin configuración de proxy
     return create_client(url, key)
 
 
