@@ -1,0 +1,42 @@
+# Framework web
+fastapi>=0.95.0
+uvicorn>=0.21.0
+pydantic>=1.10.7
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
+
+# Cliente de Supabase
+supabase>=0.7.1
+httpx>=0.24.0
+
+# Autenticación
+PyJWT>=2.6.0
+python-jose>=3.3.0
+passlib>=1.7.4
+
+# Procesamiento de lenguaje natural
+transformers>=4.28.1
+nltk>=3.8.1
+google-generativeai>=0.3.0
+tenacity>=8.2.0
+
+# Aprendizaje automático
+scikit-learn>=1.2.2
+pandas>=2.0.0
+numpy>=1.24.2
+
+# API de Telegram
+python-telegram-bot>=20.2
+
+# Herramientas de desarrollo
+pytest>=7.3.1
+black>=23.3.0
+isort>=5.12.0
+flake8>=6.0.0
+
+# API de Clarifai
+clarifai-grpc>=9.0.0
+
+# Actualización de python-telegram-bot
+python-telegram-bot==20.7
+python-dotenv==1.0.0 

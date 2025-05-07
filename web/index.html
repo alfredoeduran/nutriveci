@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NutriVeci - Chat</title>
+  <link rel="stylesheet" href="css/chat.css">
+</head>
+<body>
+  <div id="chat-container"></div>
+  
+  <script type="module">
+    import Chat from './js/components/Chat.js';
+    
+    // Inicializar el chat
+    const chat = new Chat('chat-container');
+    
+    // TODO: Obtener el ID del usuario de la sesión actual
+    // Por ahora usamos un ID de prueba
+    chat.setUserId('test-user-123');
+  </script>
+</body>
+</html>
