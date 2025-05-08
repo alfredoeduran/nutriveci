@@ -2528,6 +2528,32 @@ def handle_profile_completion(query, context):
     if 'user_profile' in context.user_data:
         user_info['profile'].update(context.user_data['user_profile'])
     
+    # Guardar los perfiles en un archivo JSON dedicado
+    profiles_file = os.path.join(DATA_PATH, "processed", "user_profiles.json")
+    profiles_data = {}
+    
+    # Cargar perfiles existentes si el archivo existe
+    if os.path.exists(profiles_file):
+        try:
+            with open(profiles_file, 'r', encoding='utf-8') as f:
+                profiles_data = json.load(f)
+        except json.JSONDecodeError:
+            logger.error(f"Error decodificando {profiles_file}. Creando nuevo archivo.")
+        except Exception as e:
+            logger.error(f"Error leyendo archivo de perfiles: {str(e)}")
+    
+    # Añadir o actualizar el perfil del usuario actual
+    profiles_data[str(user_id)] = user_info['profile']
+    
+    # Guardar el archivo actualizado
+    try:
+        os.makedirs(os.path.dirname(profiles_file), exist_ok=True)
+        with open(profiles_file, 'w', encoding='utf-8') as f:
+            json.dump(profiles_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Perfil de usuario {user_id} guardado en {profiles_file}")
+    except Exception as e:
+        logger.error(f"Error guardando perfil en archivo: {str(e)}")
+    
     # Mostrar mensaje de confirmación
     try:
         query.edit_message_text(
