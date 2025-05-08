@@ -44,55 +44,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Clase auxiliar para manejar reintentos
-class RetryHandler:
-    """Clase para gestionar reintentos con espera exponencial."""
-    
-    def __init__(self, max_retries=3, base_delay=1, max_delay=30):
-        """
-        Inicializa el gestor de reintentos.
-        
-        Args:
-            max_retries: Número máximo de reintentos
-            base_delay: Retraso base en segundos
-            max_delay: Retraso máximo en segundos
-        """
-        self.max_retries = max_retries
-        self.base_delay = base_delay
-        self.max_delay = max_delay
-    
-    def execute_with_retry(self, func, *args, **kwargs):
-        """
-        Ejecuta una función con reintentos.
-        
-        Args:
-            func: Función a ejecutar
-            *args, **kwargs: Argumentos para la función
-            
-        Returns:
-            Resultado de la función
-            
-        Raises:
-            Exception: Si todos los reintentos fallan
-        """
-        last_exception = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                return func(*args, **kwargs)
-            except (NetworkError, TimedOut, RetryAfter) as e:
-                last_exception = e
-                if attempt < self.max_retries:
-                    # Calcular retraso con backoff exponencial y jitter
-                    delay = min(self.base_delay * (2 ** attempt) + random.uniform(0, 1), self.max_delay)
-                    logger.warning(f"Error de red en intento {attempt+1}/{self.max_retries+1}. Reintentando en {delay:.2f}s")
-                    time.sleep(delay)
-                else:
-                    logger.error(f"Todos los reintentos fallaron: {str(e)}")
-                    raise last_exception
-            except Exception as e:
-                # Para otros errores, no reintentamos
-                logger.error(f"Error no recuperable: {str(e)}")
-                raise e
+# Cargar variables de entorno
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Configurar componentes
+DATA_PATH = os.path.join(ROOT_DIR, "data")
+food_detector = FoodDetector()
+
+# Importar clases y funciones desde los nuevos módulos
+try:
+    # Intenta importar como parte del paquete (funciona cuando se ejecuta como módulo)
+    from .retry_handler import RetryHandler
+    from .food_processor import ExtendedGeminiFoodProcessor
+    from .recipe_manager import get_user_data, save_recipe_to_json, load_saved_recipes
+    from .telegram_handlers import start, menu_command, help_command, button
+except ImportError:
+    # Importación alternativa para ejecución directa
+    from retry_handler import RetryHandler
+    from food_processor import ExtendedGeminiFoodProcessor
+    from recipe_manager import get_user_data, save_recipe_to_json, load_saved_recipes
+    from telegram_handlers import start, menu_command, help_command, button
 
 # Crear instancia del manejador de reintentos
 retry_handler = RetryHandler()
@@ -112,6 +84,8 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
         super().__init__(data_path)
         # URL base para la API (configurable por variable de entorno)
         self.api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        # Guardar data_path explícitamente como atributo de clase
+        self.data_path = data_path or os.path.join(os.path.dirname(__file__), "..", "..", "data")
         # Diccionario de alimentos comunes (español -> inglés)
         self.common_foods = {
             "manzana": "apple", "naranja": "orange", "plátano": "banana", "platano": "banana", 
@@ -164,7 +138,7 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
                     "zanahoria": "carrot",
                     "cebolla": "onion",
                     "ajo": "garlic",
-                    "queso": "cheese",
+                    "queso": "cheese", 
                     "manzana": "apple",
                     "plátano": "banana",
                     "platano": "banana",
@@ -481,8 +455,13 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
         # Log inicial para depuración
         logger.info(f"FOOD_CHECK: Verificando si '{text}' es un alimento...")
         
-        # Paso 1: Verificación rápida con lista local de alimentos comunes
+        # Descartar explícitamente términos generales de alimentos
         text_lower = text.lower()
+        if text_lower in ['food', 'meal', 'dinner', 'comida', 'cena', 'almuerzo', 'lunch']:
+            logger.info(f"FOOD_CHECK: Término general de comida '{text}' descartado. RESULTADO: NO ES ALIMENTO")
+            return False
+        
+        # Paso 1: Verificación rápida con lista local de alimentos comunes
         words = text_lower.split()
         
         # Verificar si hay palabras que no son alimentos (lista expandida)
@@ -503,7 +482,9 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
             "oficina", "escuela", "hospital", "tienda", "parque", "jardín", "jardin", "calle",
             "avenida", "carretera", "autopista", "ciudad", "pueblo", "país", "pais", "continente",
             # Otras categorías irrelevantes
-            "hola", "adiós", "adios", "gracias", "por favor", "ayuda", "que tal", "como estas"
+            "hola", "adiós", "adios", "gracias", "por favor", "ayuda", "que tal", "como estas",
+            # Términos generales de comida (no ingredientes específicos)
+            "food", "meal", "dinner", "comida", "cena", "almuerzo", "lunch", "no person"
         ]
         
         # Si CUALQUIER palabra en la consulta está en la lista de no-alimentos, retornar False
@@ -967,7 +948,7 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
 food_processor = ExtendedGeminiFoodProcessor(DATA_PATH)
 
 # Estados para el ConversationHandler
-MAIN_MENU, TEXT_FOOD, IMAGE_FOOD, COMPLETE_MEAL_MENU, FOOD_HISTORY, CREATE_RECIPE, ADD_INGREDIENTS, VIEW_RECIPES, REQUEST_RECIPE = range(9)
+MAIN_MENU, TEXT_FOOD, IMAGE_FOOD, COMPLETE_MEAL_MENU, FOOD_HISTORY, CREATE_RECIPE, ADD_INGREDIENTS, VIEW_RECIPES, REQUEST_RECIPE, RECOMMENDATIONS = range(10)
 
 # Datos temporales
 recipe_context = {}  # Almacena contexto durante creación de recetas
@@ -1000,13 +981,13 @@ def get_main_menu_keyboard():
         InlineKeyboardMarkup: Teclado con botones
     """
     keyboard = [
-        [InlineKeyboardButton("🥗 Ingresar alimento", callback_data='food_input')],
+        [InlineKeyboardButton("🔍 Solicitar receta", callback_data='request_recipe')],
+        [InlineKeyboardButton("🥗 Consultar alimento", callback_data='food_input')],
         [InlineKeyboardButton("🍽️ Ingresar plato completo", callback_data='meal_input')],
+        [InlineKeyboardButton("⭐ Recetas recomendadas", callback_data='recommendations')],
         [InlineKeyboardButton("📋 Ver historial", callback_data='history')],
         [InlineKeyboardButton("📊 Calorías acumuladas", callback_data='calories')],
-        [InlineKeyboardButton("📖 Mis recetas", callback_data='view_recipes')],
-        [InlineKeyboardButton("🧪 Crear receta", callback_data='create_recipe')],
-        [InlineKeyboardButton("🔍 Solicitar receta", callback_data='request_recipe')]
+        [InlineKeyboardButton("📖 Mis recetas", callback_data='view_recipes')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -1054,7 +1035,7 @@ def get_action_keyboard():
         InlineKeyboardMarkup: Teclado con botones
     """
     keyboard = [
-        [InlineKeyboardButton("➕ Agregar otro alimento", callback_data='food_input')],
+        [InlineKeyboardButton("➕ Consultar otro alimento", callback_data='food_input')],
         [InlineKeyboardButton("📋 Ver historial", callback_data='history')],
         [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
     ]
@@ -1094,13 +1075,28 @@ def start(update: Update, context: CallbackContext) -> int:
     # Inicializar datos de usuario si no existen
     get_user_data(user.id)
     
-    # Mensaje de bienvenida
-    update.message.reply_text(
-        f"Hola {user.first_name}! 👋\n\n"
-        "Soy NutriVeci 🥗, tu asistente nutricional personal.\n\n"
-        "¿Qué te gustaría hacer hoy?",
-        reply_markup=get_main_menu_keyboard()
-    )
+    # Ruta a la imagen de bienvenida
+    image_path = os.path.join(ROOT_DIR, "data", "resources", "nutriveci3d.png")
+    
+    try:
+        # Enviar imagen de bienvenida
+        with open(image_path, 'rb') as photo:
+            update.message.reply_photo(
+                photo=photo,
+                caption=f"Hola {user.first_name}! 👋\n\n"
+                "Soy NutriVeci 🥗, tu asistente nutricional personal.\n\n"
+                "¿Qué te gustaría hacer hoy?",
+                reply_markup=get_main_menu_keyboard()
+            )
+    except FileNotFoundError:
+        # Si no encuentra la imagen, continuar sin ella
+        logger.warning(f"Imagen de bienvenida no encontrada en {image_path}")
+        update.message.reply_text(
+            f"Hola {user.first_name}! 👋\n\n"
+            "Soy NutriVeci 🥗, tu asistente nutricional personal.\n\n"
+            "¿Qué te gustaría hacer hoy?",
+            reply_markup=get_main_menu_keyboard()
+        )
     
     return MAIN_MENU
 
@@ -1121,7 +1117,9 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "• Consulta información de alimentos individuales\n"
         "• Analiza platos completos con fotos o texto\n"
         "• Revisa tu historial de consultas\n"
-        "• Crea y guarda tus propias recetas\n\n"
+        "• Solicita recetas basadas en ingredientes disponibles\n"
+        "• Recibe recomendaciones personalizadas según tu perfil nutricional\n"
+        "• Explora tus recetas guardadas\n\n"
         "Para volver al menú principal en cualquier momento, escribe /menu.",
         parse_mode=ParseMode.MARKDOWN
     )
@@ -1159,6 +1157,80 @@ def button_handler(update: Update, context: CallbackContext) -> int:
     data = query.data
     user_id = query.from_user.id
     
+    # Función de ayuda para enviar respuesta de forma segura
+    def send_response_safely(text, reply_markup=None, parse_mode=None):
+        """
+        Envía un mensaje de forma segura, manejando posibles errores.
+        Si no se puede editar el mensaje, intenta enviar uno nuevo.
+        
+        Args:
+            text: Texto del mensaje
+            reply_markup: Teclado de botones (opcional)
+            parse_mode: Modo de análisis para el texto (opcional)
+        """
+        try:
+            # Intentar editar el mensaje existente
+            query.edit_message_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+        except BadRequest as e:
+            error_msg = str(e).lower()
+            # Manejar diferentes tipos de errores de BadRequest
+            if ("message to edit not found" in error_msg or 
+                "there is no text in the message to edit" in error_msg or
+                "message can't be edited" in error_msg or
+                "message is not modified" in error_msg):
+                # Si no se puede editar, enviar uno nuevo
+                try:
+                    context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=text,
+                        reply_markup=reply_markup,
+                        parse_mode=parse_mode
+                    )
+                except Exception as inner_e:
+                    logger.error(f"Error al enviar nuevo mensaje: {str(inner_e)}")
+            else:
+                # Otros errores de BadRequest podrían necesitar manejo específico
+                logger.error(f"Error al editar mensaje: {str(e)}")
+                # Intentar sin formateo por si es un problema con el ParseMode
+                if parse_mode:
+                    try:
+                        query.edit_message_text(
+                            text=text,
+                            reply_markup=reply_markup,
+                            parse_mode=None
+                        )
+                        return
+                    except Exception as parse_e:
+                        logger.error(f"Error al editar sin formateo: {str(parse_e)}")
+                
+                # Si aún falla, intentar enviar un nuevo mensaje sin formateo
+                try:
+                    context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=text,
+                        reply_markup=reply_markup,
+                        parse_mode=None
+                    )
+                except Exception as final_e:
+                    logger.error(f"Error final al enviar mensaje: {str(final_e)}")
+        except Exception as e:
+            # Manejar otros tipos de errores
+            logger.error(f"Error inesperado al procesar mensaje: {str(e)}")
+            try:
+                # Intentar enviar un nuevo mensaje como último recurso
+                context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+            except Exception as final_e:
+                logger.error(f"No se pudo enviar mensaje de ninguna forma: {str(final_e)}")
+    
     # Manejo de los diferentes botones
     if data == 'main_menu':
         try:
@@ -1178,7 +1250,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         
     elif data == 'food_input':
         query.edit_message_text(
-            "🥗 *Ingresar alimento*\n\n"
+            "🥗 *Consultar alimento*\n\n"
             "Escribe el nombre de un alimento o selecciona uno de los sugeridos:",
             reply_markup=get_food_input_keyboard(),
             parse_mode=ParseMode.MARKDOWN
@@ -1329,95 +1401,61 @@ def button_handler(update: Update, context: CallbackContext) -> int:
                 logger.warning(f"No se pudieron cargar recetas de Supabase: {str(e)}")
                 # Continuar con las recetas locales solamente
             
-            # Combinar recetas de ambas fuentes
-            all_recipes = local_recipes + supabase_recipes
+            combined_recipes = []
+            # Usar IDs para evitar duplicados
+            seen_ids = set()
             
-            if not all_recipes:
-                # Si no hay recetas, mostrar mensaje y opciones para solicitar receta
+            # Añadir recetas locales
+            for recipe in local_recipes:
+                recipe_id = recipe.get('id')
+                if recipe_id and recipe_id not in seen_ids:
+                    combined_recipes.append(recipe)
+                    seen_ids.add(recipe_id)
+            
+            # Añadir recetas de Supabase
+            for recipe in supabase_recipes:
+                recipe_id = recipe.get('id')
+                if recipe_id and recipe_id not in seen_ids:
+                    combined_recipes.append(recipe)
+                    seen_ids.add(recipe_id)
+            
+            if not combined_recipes:
                 query.edit_message_text(
-                    "No tienes recetas guardadas aún. ¡Solicita una receta nueva!",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔍 Solicitar receta", callback_data='request_recipe')],
-                        [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
-                    ])
+                    "No tienes recetas guardadas.",
+                    reply_markup=get_main_menu_keyboard()
                 )
             else:
-                # Si hay recetas, mostrarlas
-                # Ordenar por fecha si es posible
-                try:
-                    all_recipes.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-                except Exception as e:
-                    logger.warning(f"No se pudieron ordenar las recetas: {str(e)}")
+                # Mostrar las recetas guardadas
+                query.edit_message_text(
+                    "📚 *Tus recetas guardadas*\n\n"
+                    "Selecciona una receta para ver detalles:",
+                    parse_mode=ParseMode.MARKDOWN
+                )
                 
-                # Crear texto y teclado para mostrar
-                recipes_text = "📖 *Tus recetas guardadas:*\n\n"
-                keyboard = []
-                
-                # Añadir cada receta al texto y al teclado
-                for i, recipe in enumerate(all_recipes, 1):
-                    try:
-                        # Determinar nombre y origen de forma segura
-                        recipe_name = recipe.get('name', f"Receta {i}")
-                        if not isinstance(recipe_name, str):
-                            recipe_name = f"Receta {i}"
-                        
-                        source = recipe.get('source', 'desconocido')
-                        source_emoji = "🤖" if source == "gemini" else "📚" if source == "foodcom" else "💾"
-                        
-                        # Añadir al texto
-                        recipes_text += f"{i}. {source_emoji} {recipe_name}\n"
-                        
-                        # El callback_data debe tener un formato que indique si es local o Supabase
-                        recipe_id = str(recipe.get('id', f"id-{i}"))
-                        # Limitar longitud del id para evitar problemas con Telegram
-                        if len(recipe_id) > 30:
-                            recipe_id = recipe_id[:30]
-                        
-                        # Determinar si es local o supabase basado en su posición en la lista
-                        callback_suffix = recipe_id
-                        
-                        # Añadir al teclado
-                        keyboard.append([
-                            InlineKeyboardButton(
-                                f"{source_emoji} {recipe_name[:30]}{'...' if len(recipe_name) > 30 else ''}", 
-                                callback_data=f"recipe_{callback_suffix}"
-                            )
-                        ])
-                    except Exception as e:
-                        logger.error(f"Error procesando receta #{i}: {str(e)}")
-                        continue
-                
-                # Agregar botón para volver
-                keyboard.append([
-                    InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')
-                ])
-                
-                # Mostrar recetas
-                try:
-                    query.edit_message_text(
-                        recipes_text,
-                        reply_markup=InlineKeyboardMarkup(keyboard),
+                # Crear botones para cada receta
+                for recipe in combined_recipes[:10]:  # Limitar a 10 recetas
+                    recipe_id = recipe.get('id')
+                    # Buscar el título en 'title' o 'name' (compatibilidad con ambos formatos)
+                    title = recipe.get('title', recipe.get('name', 'Receta sin título'))
+                    
+                    # Añadir botón para esta receta
+                    context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=f"🍽️ *{title}*",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("👁️ Ver detalles", callback_data=f'view_recipe_{recipe_id}')],
+                            [InlineKeyboardButton("⭐ Guardar en favoritos", callback_data=f'save_recipe_{recipe_id}')]
+                        ]),
                         parse_mode=ParseMode.MARKDOWN
                     )
-                except Exception as e:
-                    # Si hay problema mostrando todas las recetas (texto muy largo), mostrar menos
-                    logger.warning(f"Problema mostrando todas las recetas: {str(e)}")
-                    query.edit_message_text(
-                        "📖 *Tus recetas guardadas:*\n\n" + 
-                        f"Se encontraron {len(all_recipes)} recetas. Selecciona una para ver detalles:",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-            
-            return VIEW_RECIPES
-            
         except Exception as e:
-            logger.error(f"Error cargando recetas: {str(e)}", exc_info=True)
+            logger.error(f"Error al mostrar recetas: {str(e)}")
             query.edit_message_text(
-                "Error al cargar tus recetas. Por favor, intenta de nuevo.",
+                "Ocurrió un error al cargar las recetas.",
                 reply_markup=get_main_menu_keyboard()
             )
-            return MAIN_MENU
+        
+        return VIEW_RECIPES
         
     elif data == 'add_ingredients':
         # Agregar ingredientes a la receta en creación
@@ -1507,6 +1545,16 @@ def button_handler(update: Update, context: CallbackContext) -> int:
             # Registrar en el historial del usuario
             loop.run_until_complete(add_recipe_to_history(str(user_id), recipe_id, "user_created"))
             
+            # Registrar interacción para el sistema de recomendación
+            try:
+                from backend.ai.recommendation import get_recommender
+                recommender = get_recommender()
+                # Calificación 1.0 para recetas guardadas/favoritas
+                recommender.add_user_interaction(str(user_id), str(recipe_id), rating=1.0)
+                logger.info(f"Registrada interacción fuerte de usuario {user_id} con receta {recipe_id}")
+            except Exception as e:
+                logger.error(f"Error registrando interacción de guardado: {str(e)}")
+            
             # Limpiar el contexto
             del recipe_context[user_id]
             
@@ -1546,6 +1594,16 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         recipe_id_info = data[7:]  # Extraer el ID e información de la receta
         
         try:
+            # Registrar esta interacción para mejorar las recomendaciones futuras
+            try:
+                from backend.ai.recommendation import get_recommender
+                recommender = get_recommender()
+                # Registrar que el usuario vio esta receta (rating 0.5 para vista)
+                recommender.add_user_interaction(str(user_id), recipe_id_info, rating=0.5)
+                logger.info(f"Registrada interacción de usuario {user_id} con receta {recipe_id_info}")
+            except Exception as e:
+                logger.error(f"Error registrando interacción: {str(e)}")
+                
             # Mostrar mensaje de carga
             try:
                 query.edit_message_text("Cargando detalles de la receta... ⏳")
@@ -1736,8 +1794,1044 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         )
         return REQUEST_RECIPE
     
+    elif data == 'recommended_recipes':
+        # Iniciar el flujo de recomendaciones personalizadas
+        text = ("⭐ *Recetas recomendadas para ti*\n\n"
+            "Para ofrecerte las mejores recomendaciones, necesito algunos datos básicos sobre tu perfil.\n"
+            "Esto me ayudará a sugerir recetas adaptadas a tus necesidades nutricionales y preferencias.\n\n"
+            "¿Quieres continuar para recibir recetas personalizadas?")
+        
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Sí, crear mi perfil", callback_data='start_profile')],
+            [InlineKeyboardButton("⭐ Ver recomendaciones generales", callback_data='general_recommendations')],
+            [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
+        ])
+        
+        send_response_safely(
+            text=text,
+            reply_markup=markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        return RECOMMENDATIONS
+    
+    elif data == 'general_recommendations':
+        # Mostrar recomendaciones generales sin perfil específico
+        try:
+            send_response_safely("Buscando recomendaciones generales... ⏳")
+        except Exception as e:
+            logger.error(f"Error mostrando mensaje de carga: {str(e)}")
+            context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="Buscando recomendaciones generales... ⏳"
+            )
+        
+        try:
+            # Obtener recomendaciones a través del sistema de recomendación
+            from backend.ai.recommendation import get_recommender
+            
+            recommender = get_recommender()
+            # Obtener recomendaciones sin filtrar por perfil
+            recommendations = recommender.recommend_recipes(
+                user_id=str(user_id),
+                n=5,
+                filter_by_profile=False
+            )
+            
+            if not recommendations:
+                try:
+                    send_response_safely(
+                        "No hay suficientes datos para generar recomendaciones. Por favor, interactúa más con el bot consultando recetas.",
+                        reply_markup=get_main_menu_keyboard()
+                    )
+                except Exception as e:
+                    logger.error(f"Error enviando mensaje: {str(e)}")
+                    context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text="No hay suficientes datos para generar recomendaciones. Por favor, interactúa más con el bot consultando recetas.",
+                        reply_markup=get_main_menu_keyboard()
+                    )
+                return MAIN_MENU
+            
+            # Construir mensaje con recomendaciones
+            msg = "⭐ *Recetas recomendadas para ti:*\n\n"
+            
+            for i, recipe in enumerate(recommendations, 1):
+                recipe_name = recipe.get('name', f"Receta {i}")
+                recipe_source = recipe.get('source', 'desconocido')
+                source_emoji = "🤖" if recipe_source == "gemini" else "📚" if recipe_source == "foodcom" else "💾"
+                
+                # Añadir receta al mensaje
+                msg += f"{i}. {source_emoji} *{recipe_name}*\n"
+                
+                # Añadir una breve descripción si está disponible
+                description = recipe.get('description', '')
+                if description:
+                    # Limitar descripción a 100 caracteres
+                    if len(description) > 100:
+                        description = description[:97] + "..."
+                    msg += f"   _{description}_\n"
+                
+                # Añadir información nutricional básica si está disponible
+                calories = recipe.get('calories', None)
+                if calories is not None:
+                    msg += f"   Calorías: {calories} kcal\n"
+                
+                # Separador entre recetas
+                msg += "\n"
+            
+            # Añadir consejo sobre el perfil
+            msg += "\n💡 *Consejo:* Para recibir recomendaciones más personalizadas, crea tu perfil nutricional."
+            
+            # Crear teclado con opciones para cada receta
+            keyboard = []
+            for recipe in recommendations:
+                recipe_id = recipe.get('id', '')
+                recipe_name = recipe.get('name', 'Receta')
+                # Limitar longitud del nombre para el botón
+                if len(recipe_name) > 20:
+                    recipe_name = recipe_name[:17] + "..."
+                
+                keyboard.append([
+                    InlineKeyboardButton(f"Ver {recipe_name}", callback_data=f"recipe_{recipe_id}")
+                ])
+            
+            # Añadir botones de navegación
+            keyboard.append([
+                InlineKeyboardButton("🧑‍💼 Crear mi perfil", callback_data='start_profile'),
+                InlineKeyboardButton("🔙 Menú principal", callback_data='main_menu')
+            ])
+            
+            # Mostrar mensaje con recomendaciones
+            try:
+                send_response_safely(
+                    msg,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as e:
+                logger.error(f"Error enviando mensaje de recomendaciones: {str(e)}")
+                context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=msg,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo recomendaciones generales: {str(e)}")
+            try:
+                send_response_safely(
+                    "Lo siento, ocurrió un error al obtener recomendaciones. Por favor, intenta de nuevo.",
+                    reply_markup=get_main_menu_keyboard()
+                )
+            except:
+                context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="Lo siento, ocurrió un error al obtener recomendaciones. Por favor, intenta de nuevo.",
+                    reply_markup=get_main_menu_keyboard()
+                )
+        
+        return RECOMMENDATIONS
+    
+    elif data == 'start_profile':
+        # Iniciar el proceso de creación del perfil
+        # Creamos un diccionario para almacenar temporalmente los datos del perfil
+        context.user_data['user_profile'] = {
+            'edad': '',
+            'genero': '',
+            'peso': '',
+            'patologias': [],
+            'alergias': []
+        }
+        
+        # Preguntar por la edad
+        text = ("🧑‍💼 *Creación de Perfil Nutricional*\n\n"
+                "Para comenzar, ¿cuál es tu edad?")
+        
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("< 18 años", callback_data='profile_age_<18'),
+                InlineKeyboardButton("18-30 años", callback_data='profile_age_18-30')
+            ],
+            [
+                InlineKeyboardButton("31-45 años", callback_data='profile_age_31-45'),
+                InlineKeyboardButton("46-60 años", callback_data='profile_age_46-60')
+            ],
+            [
+                InlineKeyboardButton("61-75 años", callback_data='profile_age_61-75'),
+                InlineKeyboardButton("> 75 años", callback_data='profile_age_>75')
+            ],
+            [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+        ])
+        
+        try:
+            send_response_safely(
+                text=text,
+                reply_markup=markup,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            logger.error(f"Error mostrando formulario de edad: {str(e)}")
+            context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=text,
+                reply_markup=markup,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        
+        # Establecer el próximo paso en la conversación
+        context.user_data['profile_step'] = 'age'
+        
+        return RECOMMENDATIONS
+    
+    elif data.startswith('profile_age_'):
+        # Procesar selección de rango de edad
+        age_range = data.replace('profile_age_', '')
+        
+        # Inicializar el perfil si no existe
+        if 'user_profile' not in context.user_data:
+            context.user_data['user_profile'] = {}
+        
+        # Guardar edad en el perfil
+        context.user_data['user_profile']['edad'] = age_range
+        
+        # Preguntar por el género
+        query.edit_message_text(
+            "🧑‍💼 *Creación de Perfil Nutricional*\n\n"
+            f"Edad: {age_range}\n\n"
+            "¿Cuál es tu género?",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("♂️ Masculino", callback_data='profile_gender_masculino')],
+                [InlineKeyboardButton("♀️ Femenino", callback_data='profile_gender_femenino')],
+                [InlineKeyboardButton("⚧️ Otro", callback_data='profile_gender_otro')],
+                [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+            ])
+        )
+        
+        # Establecer el próximo paso
+        context.user_data['profile_step'] = 'gender'
+        
+        return RECOMMENDATIONS
+    
+    elif data.startswith('profile_gender_'):
+        # Procesar selección de género
+        gender = data.replace('profile_gender_', '')
+        
+        # Inicializar el perfil si no existe
+        if 'user_profile' not in context.user_data:
+            context.user_data['user_profile'] = {}
+        
+        # Guardar género en el perfil
+        context.user_data['user_profile']['genero'] = gender
+        
+        # Preguntar por el peso
+        query.edit_message_text(
+            "🧑‍💼 *Creación de Perfil Nutricional*\n\n"
+            f"Edad: {context.user_data['user_profile']['edad']}\n"
+            f"Género: {gender}\n\n"
+            "¿Cuál es tu peso aproximado en kg?",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("< 50 kg", callback_data='profile_weight_<50'),
+                    InlineKeyboardButton("50-60 kg", callback_data='profile_weight_50-60')
+                ],
+                [
+                    InlineKeyboardButton("60-70 kg", callback_data='profile_weight_60-70'),
+                    InlineKeyboardButton("70-80 kg", callback_data='profile_weight_70-80')
+                ],
+                [
+                    InlineKeyboardButton("80-90 kg", callback_data='profile_weight_80-90'),
+                    InlineKeyboardButton("> 90 kg", callback_data='profile_weight_>90')
+                ],
+                [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+            ])
+        )
+        
+        # Establecer el próximo paso
+        context.user_data['profile_step'] = 'weight'
+        
+        return RECOMMENDATIONS
+    
+    elif data.startswith('profile_weight_'):
+        # Procesar selección de peso
+        weight = data.replace('profile_weight_', '')
+        
+        # Inicializar el perfil si no existe
+        if 'user_profile' not in context.user_data:
+            context.user_data['user_profile'] = {}
+        
+        # Guardar peso en el perfil
+        context.user_data['user_profile']['peso'] = weight
+        
+        # Preguntar por patologías
+        query.edit_message_text(
+            "🧑‍💼 *Creación de Perfil Nutricional*\n\n"
+            f"Edad: {context.user_data['user_profile']['edad']}\n"
+            f"Género: {context.user_data['user_profile']['genero']}\n"
+            f"Peso: {weight}\n\n"
+            "¿Tienes alguna de las siguientes patologías?",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🩸 Hipertensión", callback_data='profile_patology_hipertension')],
+                [InlineKeyboardButton("🧪 Diabetes", callback_data='profile_patology_diabetes')],
+                [InlineKeyboardButton("❤️ Colesterol alto", callback_data='profile_patology_colesterol')],
+                [InlineKeyboardButton("❌ Ninguna", callback_data='profile_patology_ninguna')],
+                [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+            ])
+        )
+        
+        # Inicializar lista de patologías
+        context.user_data['user_profile']['patologias'] = []
+        
+        # Establecer el próximo paso
+        context.user_data['profile_step'] = 'patologies'
+        
+        return RECOMMENDATIONS
+    
+    elif data.startswith('profile_patology_'):
+        # Procesar selección de patología
+        patology = data.replace('profile_patology_', '')
+        
+        # Inicializar el perfil si no existe
+        if 'user_profile' not in context.user_data:
+            context.user_data['user_profile'] = {}
+            # Inicializar campos principales para evitar KeyError
+            context.user_data['user_profile']['edad'] = "No especificada"
+            context.user_data['user_profile']['genero'] = "No especificado"
+            context.user_data['user_profile']['peso'] = "No especificado"
+            context.user_data['user_profile']['patologias'] = []
+        
+        # Si eligió "ninguna", continuar al siguiente paso
+        if patology == 'ninguna':
+            context.user_data['user_profile']['patologias'] = []
+        # Si eligió "continuar", no añadir nada y pasar al siguiente paso
+        elif patology == 'continue':
+            # No hacer nada, solo asegurarse de que ya existe la lista de patologías
+            if 'patologias' not in context.user_data['user_profile']:
+                context.user_data['user_profile']['patologias'] = []
+        else:
+            # Añadir patología a la lista
+            if 'patologias' not in context.user_data['user_profile']:
+                context.user_data['user_profile']['patologias'] = []
+            
+            context.user_data['user_profile']['patologias'].append(patology)
+            
+            # Mostrar patologías seleccionadas y opciones para continuar
+            patologias_seleccionadas = ", ".join(context.user_data['user_profile']['patologias'])
+            
+            try:
+                send_response_safely(
+                    "🧑‍💼 *Creación de Perfil Nutricional*\n\n"
+                    f"Edad: {context.user_data['user_profile']['edad']}\n"
+                    f"Género: {context.user_data['user_profile']['genero']}\n"
+                    f"Peso: {context.user_data['user_profile']['peso']}\n"
+                    f"Patologías: {patologias_seleccionadas}\n\n"
+                    "¿Quieres añadir más patologías o continuar?",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🩸 Hipertensión", callback_data='profile_patology_hipertension')],
+                        [InlineKeyboardButton("🧪 Diabetes", callback_data='profile_patology_diabetes')],
+                        [InlineKeyboardButton("❤️ Colesterol alto", callback_data='profile_patology_colesterol')],
+                        [InlineKeyboardButton("✅ Continuar", callback_data='profile_patology_continue')],
+                        [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+                    ])
+                )
+                return RECOMMENDATIONS
+            except Exception as e:
+                logger.error(f"Error mostrando opciones de patologías: {str(e)}")
+        
+        # Si llegamos aquí, añadimos comprobaciones adicionales de seguridad
+        # Asegurarse de que todos los campos necesarios existen
+        if 'user_profile' not in context.user_data:
+            context.user_data['user_profile'] = {}
+        if 'edad' not in context.user_data['user_profile']:
+            context.user_data['user_profile']['edad'] = "No especificada"
+        if 'genero' not in context.user_data['user_profile']:
+            context.user_data['user_profile']['genero'] = "No especificado"
+        if 'peso' not in context.user_data['user_profile']:
+            context.user_data['user_profile']['peso'] = "No especificado"
+        if 'patologias' not in context.user_data['user_profile']:
+            context.user_data['user_profile']['patologias'] = []
+        
+        # Preguntar por alergias (siguiente paso)
+        try:
+            send_response_safely(
+                "🧑‍💼 *Creación de Perfil Nutricional*\n\n"
+                f"Edad: {context.user_data['user_profile']['edad']}\n"
+                f"Género: {context.user_data['user_profile']['genero']}\n"
+                f"Peso: {context.user_data['user_profile']['peso']}\n"
+                f"Patologías: {', '.join(context.user_data['user_profile']['patologias']) if context.user_data['user_profile']['patologias'] else 'Ninguna'}\n\n"
+                "¿Tienes alguna de las siguientes alergias alimentarias?",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🥛 Lactosa", callback_data='profile_allergy_lactosa')],
+                    [InlineKeyboardButton("🌾 Gluten", callback_data='profile_allergy_gluten')],
+                    [InlineKeyboardButton("🥜 Frutos secos", callback_data='profile_allergy_frutos_secos')],
+                    [InlineKeyboardButton("🦐 Mariscos", callback_data='profile_allergy_mariscos')],
+                    [InlineKeyboardButton("❌ Ninguna", callback_data='profile_allergy_ninguna')],
+                    [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+                ])
+            )
+        except Exception as e:
+            logger.error(f"Error mostrando opciones de alergias: {str(e)}")
+            # Intentar reportar el error de forma detallada
+            logger.error(f"Error: {repr(e)}")
+            
+        # Inicializar lista de alergias
+        if 'alergias' not in context.user_data['user_profile']:
+            context.user_data['user_profile']['alergias'] = []
+            
+        # Establecer el próximo paso
+        context.user_data['profile_step'] = 'allergies'
+            
+        return RECOMMENDATIONS
+    
+    elif data.startswith('profile_allergy_'):
+        # Procesar selección de alergia
+        allergy = data.replace('profile_allergy_', '')
+        
+        # Inicializar el perfil si no existe
+        if 'user_profile' not in context.user_data:
+            context.user_data['user_profile'] = {
+                'edad': 'No especificada',
+                'genero': 'No especificado',
+                'peso': 'No especificado',
+                'patologias': [],
+                'alergias': []
+            }
+        
+        # Si eligió "ninguna", continuar al siguiente paso
+        if allergy == 'ninguna':
+            context.user_data['user_profile']['alergias'] = []
+            # Continuar al siguiente paso
+            return handle_profile_completion(query, context)
+        else:
+            # Añadir alergia a la lista
+            if 'alergias' not in context.user_data['user_profile']:
+                context.user_data['user_profile']['alergias'] = []
+            
+            context.user_data['user_profile']['alergias'].append(allergy)
+            
+            # Construir mensaje sin caracteres especiales para evitar problemas con markdown
+            # Mostrar alergias seleccionadas y opciones para continuar
+            alergias_seleccionadas = ", ".join(context.user_data['user_profile']['alergias'])
+            
+            try:
+                # Usar función segura de envío
+                send_response_safely(
+                    "Creación de Perfil Nutricional\n\n"
+                    f"Edad: {context.user_data['user_profile']['edad']}\n"
+                    f"Género: {context.user_data['user_profile']['genero']}\n"
+                    f"Peso: {context.user_data['user_profile']['peso']}\n"
+                    f"Patologías: {', '.join(context.user_data['user_profile']['patologias']) if context.user_data['user_profile']['patologias'] else 'Ninguna'}\n"
+                    f"Alergias: {alergias_seleccionadas}\n\n"
+                    "¿Quieres añadir más alergias o finalizar?",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🥛 Lactosa", callback_data='profile_allergy_lactosa')],
+                        [InlineKeyboardButton("🌾 Gluten", callback_data='profile_allergy_gluten')],
+                        [InlineKeyboardButton("🥜 Frutos secos", callback_data='profile_allergy_frutos_secos')],
+                        [InlineKeyboardButton("🦐 Mariscos", callback_data='profile_allergy_mariscos')],
+                        [InlineKeyboardButton("✅ Finalizar", callback_data='profile_complete')],
+                        [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+                    ])
+                )
+            except Exception as e:
+                logger.error(f"Error mostrando opciones de alergias: {str(e)}")
+                # Intentar sin emojis y sin formato markdown
+                context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="Creación de Perfil Nutricional\n\n"
+                        f"Edad: {context.user_data['user_profile']['edad']}\n"
+                        f"Género: {context.user_data['user_profile']['genero']}\n"
+                        f"Peso: {context.user_data['user_profile']['peso']}\n"
+                        f"Patologías: {', '.join(context.user_data['user_profile']['patologias']) if context.user_data['user_profile']['patologias'] else 'Ninguna'}\n"
+                        f"Alergias: {alergias_seleccionadas}\n\n"
+                        "¿Quieres añadir más alergias o finalizar?",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Lactosa", callback_data='profile_allergy_lactosa')],
+                        [InlineKeyboardButton("Gluten", callback_data='profile_allergy_gluten')],
+                        [InlineKeyboardButton("Frutos secos", callback_data='profile_allergy_frutos_secos')],
+                        [InlineKeyboardButton("Mariscos", callback_data='profile_allergy_mariscos')],
+                        [InlineKeyboardButton("Finalizar", callback_data='profile_complete')],
+                        [InlineKeyboardButton("Cancelar", callback_data='main_menu')]
+                    ])
+                )
+            
+            return RECOMMENDATIONS
+        
+    elif data == 'profile_complete':
+        # Completar el perfil y mostrar recomendaciones
+        return handle_profile_completion(query, context)
+    
+    # Handlers para view_recipe y save_recipe
+    elif data.startswith('view_recipe_'):
+        # Extraer el ID de la receta
+        recipe_id = data.replace('view_recipe_', '')
+        
+        # Buscar la receta por ID
+        recipes = load_saved_recipes(limit=50)  # Cargar un número suficiente de recetas
+        recipe = next((r for r in recipes if r.get('id') == recipe_id), None)
+        
+        if recipe:
+            # Registrar interacción para mejorar recomendaciones
+            track_recipe_interaction(user_id, recipe_id, 'viewed')
+            
+            # Preparar texto detallado de la receta
+            # Buscar el título en 'title' o 'name' (compatibilidad con ambos formatos)
+            title = recipe.get('title', recipe.get('name', 'Receta sin título'))
+            # Buscar la descripción en 'description' o 'descripcion'
+            description = recipe.get('description', recipe.get('descripcion', 'Sin descripción'))
+            
+            recipe_text = f"🍽️ *{title}*\n\n"
+            recipe_text += f"{description}\n\n"
+            
+            # Añadir ingredientes - buscar en ambos idiomas
+            if 'ingredients' in recipe and recipe['ingredients']:
+                recipe_text += "*Ingredientes:*\n"
+                for ingredient in recipe['ingredients']:
+                    if isinstance(ingredient, str):
+                        recipe_text += f"• {ingredient}\n"
+                    elif isinstance(ingredient, dict) and 'name' in ingredient:
+                        amount = ingredient.get('amount', '')
+                        unit = ingredient.get('unit', '')
+                        amount_str = f"{amount} {unit}".strip()
+                        recipe_text += f"• {ingredient['name']}{f' ({amount_str})' if amount_str else ''}\n"
+            elif 'ingredientes' in recipe and recipe['ingredientes']:
+                recipe_text += "*Ingredientes:*\n"
+                for ingredient in recipe['ingredientes']:
+                    if isinstance(ingredient, str):
+                        recipe_text += f"• {ingredient}\n"
+                    elif isinstance(ingredient, dict) and 'nombre' in ingredient:
+                        cantidad = ingredient.get('cantidad', '')
+                        unidad = ingredient.get('unidad', '')
+                        cantidad_str = f"{cantidad} {unidad}".strip()
+                        recipe_text += f"• {ingredient['nombre']}{f' ({cantidad_str})' if cantidad_str else ''}\n"
+            
+            # Añadir preparación - buscar en ambos idiomas
+            if 'instructions' in recipe and recipe['instructions']:
+                recipe_text += "\n*Preparación:*\n"
+                if isinstance(recipe['instructions'], list):
+                    for i, step in enumerate(recipe['instructions'], 1):
+                        recipe_text += f"{i}. {step}\n"
+                else:
+                    recipe_text += recipe['instructions']
+            elif 'pasos' in recipe and recipe['pasos']:
+                recipe_text += "\n*Preparación:*\n"
+                if isinstance(recipe['pasos'], list):
+                    for i, step in enumerate(recipe['pasos'], 1):
+                        recipe_text += f"{i}. {step}\n"
+                else:
+                    recipe_text += recipe['pasos']
+            
+            # Añadir información nutricional detallada si está disponible
+            if 'nutrition' in recipe:
+                nutrition = recipe['nutrition']
+                recipe_text += "\n*Información nutricional (por porción):*\n"
+                recipe_text += f"• Calorías: {nutrition.get('calories', 'N/A')} kcal\n"
+                recipe_text += f"• Proteínas: {nutrition.get('protein', 'N/A')} g\n"
+                recipe_text += f"• Carbohidratos: {nutrition.get('carbs', 'N/A')} g\n"
+                recipe_text += f"• Grasas: {nutrition.get('fat', 'N/A')} g\n"
+                
+                # Información nutricional adicional si está disponible
+                if 'fiber' in nutrition:
+                    recipe_text += f"• Fibra: {nutrition['fiber']} g\n"
+                if 'sugar' in nutrition:
+                    recipe_text += f"• Azúcares: {nutrition['sugar']} g\n"
+                if 'sodium' in nutrition:
+                    recipe_text += f"• Sodio: {nutrition['sodium']} mg\n"
+            
+            # Crear teclado con botones para guardar y volver
+            keyboard = [
+                [InlineKeyboardButton("⭐ Guardar en favoritos", callback_data=f'save_recipe_{recipe_id}')],
+                [InlineKeyboardButton("🔙 Volver", callback_data='main_menu')]
+            ]
+            
+            # Enviar mensaje con la receta detallada
+            send_response_safely(
+                recipe_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            # Si no se encuentra la receta
+            send_response_safely(
+                "No se encontró la receta solicitada.",
+                reply_markup=get_main_menu_keyboard()
+            )
+        
+        return RECOMMENDATIONS
+    
+    elif data.startswith('save_recipe_'):
+        # Extraer el ID de la receta
+        recipe_id = data.replace('save_recipe_', '')
+        
+        # Buscar la receta por ID
+        recipes = load_saved_recipes(limit=50)
+        recipe = next((r for r in recipes if r.get('id') == recipe_id), None)
+        
+        if recipe:
+            # Registrar interacción para mejorar recomendaciones
+            track_recipe_interaction(user_id, recipe_id, 'saved')
+            
+            # Añadir a favoritos del usuario
+            user_info = get_user_data(user_id)
+            
+            # Inicializar favoritos si no existe
+            if 'favorite_recipes' not in user_info:
+                user_info['favorite_recipes'] = []
+            
+            # Comprobar si ya está en favoritos
+            favorite_ids = [fav.get('id') for fav in user_info['favorite_recipes']]
+            
+            if recipe_id not in favorite_ids:
+                # Añadir a favoritos
+                user_info['favorite_recipes'].append(recipe)
+                
+                send_response_safely(
+                    f"⭐ *¡Receta guardada en favoritos!*\n\n"
+                    f"Has guardado '{recipe.get('title', recipe.get('name', 'Receta'))}' en tus favoritos.",
+                    reply_markup=get_main_menu_keyboard(),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            else:
+                # Ya está en favoritos
+                send_response_safely(
+                    f"Esta receta ya está en tus favoritos.",
+                    reply_markup=get_main_menu_keyboard()
+                )
+        else:
+            # Si no se encuentra la receta
+            send_response_safely(
+                "No se encontró la receta solicitada.",
+                reply_markup=get_main_menu_keyboard()
+            )
+        
+        return RECOMMENDATIONS
+    
+    # Añadir el botón para "Recetas recomendadas" en el menú principal
+    elif data == 'recommendations':
+        # Mostrar mensaje de carga
+        send_response_safely("Cargando recomendaciones personalizadas... ⏳")
+        
+        # Comprobar si el usuario tiene perfil completo
+        user_info = get_user_data(user_id)
+        has_profile = 'profile' in user_info and user_info['profile']
+        
+        if not has_profile:
+            # Si no tiene perfil, preguntar si quiere crear uno
+            send_response_safely(
+                "Para ofrecerte recomendaciones personalizadas, necesito conocer un poco sobre ti.\n\n"
+                "¿Te gustaría crear tu perfil nutricional ahora?",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Sí, crear perfil", callback_data='create_profile')],
+                    [InlineKeyboardButton("❌ No, mostrar recetas generales", callback_data='show_general_recipes')],
+                    [InlineKeyboardButton("🔙 Volver al menú", callback_data='main_menu')]
+                ])
+            )
+        else:
+            # Si tiene perfil, cargar recomendaciones personalizadas
+            recommended_recipes = load_recommended_recipes(user_id)
+            
+            if recommended_recipes:
+                send_response_safely(
+                    "🍽️ *Recetas recomendadas para ti*\n\n"
+                    "Aquí tienes algunas recetas que podrían interesarte basadas en tu perfil y preferencias:",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                show_recipe_recommendations(query.message, recommended_recipes, user_id)
+            else:
+                # Si no hay recomendaciones personalizadas, mostrar recetas populares
+                send_response_safely(
+                    "Aún no tengo suficientes datos para hacer recomendaciones personalizadas precisas.\n\n"
+                    "Aquí tienes algunas de nuestras recetas más populares:",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                general_recipes = load_saved_recipes(limit=5)
+                if general_recipes:
+                    show_recipe_recommendations(query.message, general_recipes, user_id)
+                else:
+                    send_response_safely(
+                        "Actualmente no hay recetas disponibles. ¡Sé el primero en crear algunas!",
+                        reply_markup=get_main_menu_keyboard()
+                    )
+        
+        return RECOMMENDATIONS
+    
+    elif data == 'create_profile':
+        # Iniciar creación de perfil - preguntar edad
+        query.edit_message_text(
+            "👤 *Creación de perfil*\n\n"
+            "Para ofrecerte recomendaciones personalizadas, necesito algunos datos básicos.\n\n"
+            "¿Cuál es tu rango de edad?",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("< 18 años", callback_data='profile_age_<18'),
+                    InlineKeyboardButton("18-30 años", callback_data='profile_age_18-30')
+                ],
+                [
+                    InlineKeyboardButton("31-45 años", callback_data='profile_age_31-45'),
+                    InlineKeyboardButton("46-60 años", callback_data='profile_age_46-60')
+                ],
+                [
+                    InlineKeyboardButton("61-75 años", callback_data='profile_age_61-75'),
+                    InlineKeyboardButton("> 75 años", callback_data='profile_age_>75')
+                ],
+                [InlineKeyboardButton("🔙 Cancelar", callback_data='main_menu')]
+            ])
+        )
+        
+        # Inicializar objeto de perfil de usuario
+        context.user_data['user_profile'] = {}
+        context.user_data['profile_step'] = 'age'
+        
+        return RECOMMENDATIONS
+    
+    elif data == 'show_general_recipes':
+        # Mostrar recetas generales sin perfil personalizado
+        send_response_safely(
+            "Aquí tienes algunas de nuestras recetas más populares:",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        general_recipes = load_saved_recipes(limit=5)
+        if general_recipes:
+            show_recipe_recommendations(query.message, general_recipes, user_id)
+        else:
+            send_response_safely(
+                "Actualmente no hay recetas disponibles. ¡Sé el primero en crear algunas!",
+                reply_markup=get_main_menu_keyboard()
+            )
+        
+        return RECOMMENDATIONS
+    
     # Valor por defecto
     return MAIN_MENU
+
+def handle_profile_completion(query, context):
+    """
+    Completa el perfil del usuario y muestra las primeras recomendaciones personalizadas.
+    """
+    user_id = query.from_user.id
+    
+    # Guardar el perfil completo del usuario
+    user_info = get_user_data(user_id)
+    
+    # Asegurarse de que exista la estructura para guardar el perfil
+    if 'profile' not in user_info:
+        user_info['profile'] = {}
+    
+    # Transferir los datos del perfil temporal al perfil permanente
+    if 'user_profile' in context.user_data:
+        user_info['profile'].update(context.user_data['user_profile'])
+    
+    # Mostrar mensaje de confirmación
+    try:
+        query.edit_message_text(
+            "✅ *¡Perfil completado correctamente!*\n\n"
+            "He guardado tus preferencias para ofrecerte recomendaciones personalizadas. "
+            "A medida que interactúes con las recetas, podré ofrecerte sugerencias cada vez más adaptadas a tus gustos.\n\n"
+            "A continuación te muestro algunas recetas que podrían interesarte:",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except BadRequest as e:
+        if "message to edit not found" in str(e) or "There is no text in the message to edit" in str(e):
+            # Si no se puede editar, enviar un nuevo mensaje
+            context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="✅ *¡Perfil completado correctamente!*\n\n"
+                    "He guardado tus preferencias para ofrecerte recomendaciones personalizadas. "
+                    "A medida que interactúes con las recetas, podré ofrecerte sugerencias cada vez más adaptadas a tus gustos.\n\n"
+                    "A continuación te muestro algunas recetas que podrían interesarte:",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            # Si es otro tipo de error, registrarlo
+            logger.error(f"Error al editar mensaje: {str(e)}")
+    
+    # Cargar recetas recomendadas basadas en el perfil
+    recommended_recipes = load_recommended_recipes(user_id)
+    
+    # Si no hay recomendaciones específicas, mostrar mensaje genérico
+    if not recommended_recipes:
+        try:
+            query.message.reply_text(
+                "Aún no tenemos suficientes datos para hacer recomendaciones personalizadas. "
+                "Mientras tanto, aquí tienes algunas de nuestras recetas más populares:",
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except BadRequest as e:
+            logger.error(f"Error al enviar mensaje de recomendaciones: {str(e)}")
+        # Cargar recetas populares como alternativa
+        recommended_recipes = load_saved_recipes(limit=5)
+    
+    # Mostrar las recetas recomendadas
+    if recommended_recipes:
+        show_recipe_recommendations(query.message, recommended_recipes, user_id)
+    else:
+        # Si no hay recetas en absoluto
+        try:
+            query.message.reply_text(
+                "Actualmente no hay recetas disponibles. ¡Sé el primero en crear algunas!",
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except BadRequest as e:
+            logger.error(f"Error al enviar mensaje sin recetas: {str(e)}")
+    
+    return RECOMMENDATIONS
+
+def load_recommended_recipes(user_id, limit=5):
+    """
+    Carga recetas recomendadas basadas en el perfil del usuario y sus interacciones pasadas.
+    Implementa un sistema básico de filtrado colaborativo basado en contenido.
+    """
+    user_info = get_user_data(user_id)
+    
+    # Obtener el perfil del usuario
+    user_profile = {}
+    if 'profile' in user_info:
+        user_profile = user_info['profile']
+    elif 'user_profile' in user_info:
+        # Compatibilidad con versiones anteriores
+        user_profile = user_info['user_profile']
+    
+    # Si no hay perfil, devolver recetas generales
+    if not user_profile:
+        return load_saved_recipes(limit=limit)
+    
+    # Cargar todas las recetas disponibles
+    all_recipes = load_saved_recipes(limit=100)  # Usamos un límite alto para tener más opciones
+    
+    # Si no hay recetas disponibles, devolver una lista vacía
+    if not all_recipes:
+        return []
+    
+    # Filtrar recetas según las restricciones del perfil
+    filtered_recipes = []
+    
+    for recipe in all_recipes:
+        should_include = True
+        
+        # Verificar patologías
+        if 'patologias' in user_profile and user_profile['patologias']:
+            # Recetas a evitar para hipertensión: altas en sodio
+            if ('hipertension' in user_profile['patologias'] or 
+                'presion alta' in user_profile['patologias']):
+                # Buscar etiquetas en inglés o español
+                tags = recipe.get('tags', recipe.get('etiquetas', []))
+                if 'alto_sodio' in tags or 'high_sodium' in tags:
+                    should_include = False
+                
+            # Recetas a evitar para diabetes: altas en azúcares
+            if 'diabetes' in user_profile['patologias']:
+                # Buscar etiquetas en inglés o español
+                tags = recipe.get('tags', recipe.get('etiquetas', []))
+                if 'alto_azucar' in tags or 'high_sugar' in tags:
+                    should_include = False
+                
+        # Verificar alergias
+        if 'alergias' in user_profile and user_profile['alergias']:
+            # Buscar ingredientes en inglés o español
+            ingredients_text = ""
+            if 'ingredientes' in recipe:
+                if isinstance(recipe['ingredientes'], list):
+                    # Si es una lista, convertirla a texto
+                    ingredients_text = ' '.join(str(ing) for ing in recipe['ingredientes'])
+                else:
+                    # Si no es una lista, asegurarse que sea texto
+                    ingredients_text = str(recipe['ingredientes'])
+            elif 'ingredients' in recipe:
+                if isinstance(recipe['ingredients'], list):
+                    # Si es una lista, convertirla a texto
+                    ingredients_text = ' '.join(str(ing) for ing in recipe['ingredients'])
+                else:
+                    # Si no es una lista, asegurarse que sea texto
+                    ingredients_text = str(recipe['ingredients'])
+            elif isinstance(recipe.get('ingredientes', []), list):
+                # Si ya verificamos que es una lista, convertirla a texto
+                ingredients_text = ' '.join(str(ing) for ing in recipe.get('ingredientes', []))
+            elif isinstance(recipe.get('ingredients', []), list):
+                # Si ya verificamos que es una lista, convertirla a texto
+                ingredients_text = ' '.join(str(ing) for ing in recipe.get('ingredients', []))
+            
+            # Convertir todo a minúsculas para hacer la comparación
+            ingredients_text_lower = ingredients_text.lower()
+            
+            for alergia in user_profile['alergias']:
+                if alergia.lower() in ingredients_text_lower:
+                    should_include = False
+                    break
+        
+        if should_include:
+            filtered_recipes.append(recipe)
+    
+    # Si después del filtrado no quedan recetas, devolver recetas generales
+    if not filtered_recipes:
+        return load_saved_recipes(limit=limit)
+    
+    # Implementación simple de recomendación basada en edad
+    if 'edad' in user_profile:
+        # Convertir el rango de edad a un valor numérico aproximado para comparación
+        edad_str = user_profile['edad']
+        try:
+            if edad_str == '<18':
+                edad = 16  # Valor representativo para menores de 18
+            elif edad_str == '>75':
+                edad = 80  # Valor representativo para mayores de 75
+            else:
+                # Para rangos como "18-30", tomamos el promedio
+                limites = edad_str.split('-')
+                edad = (int(limites[0]) + int(limites[1])) / 2
+                
+            # Asignar puntuación por edad (ejemplo simple)
+            for recipe in filtered_recipes:
+                recipe['score'] = recipe.get('score', 0)
+                
+                # Buscar etiquetas en inglés o español
+                tags = recipe.get('tags', recipe.get('etiquetas', []))
+                
+                # Preferencias por grupo de edad (simplificado)
+                if edad < 18 and ('kids_friendly' in tags or 'para_ninos' in tags):
+                    recipe['score'] += 2
+                elif 18 <= edad <= 30 and ('rapida' in tags or 'quick' in tags):
+                    recipe['score'] += 1.5
+                elif 31 <= edad <= 60 and ('saludable' in tags or 'healthy' in tags):
+                    recipe['score'] += 1.5
+                elif edad > 60 and ('suave' in tags or 'soft' in tags):
+                    recipe['score'] += 2
+        except (ValueError, IndexError) as e:
+            logger.error(f"Error al procesar edad para recomendaciones: {str(e)}")
+    
+    # Ordenar por puntuación y devolver las mejores
+    filtered_recipes.sort(key=lambda x: x.get('score', 0), reverse=True)
+    return filtered_recipes[:limit]
+
+def show_recipe_recommendations(message, recipes, user_id):
+    """
+    Muestra las recetas recomendadas en un mensaje con opciones para interactuar con ellas.
+    """
+    # Construir el mensaje con las recetas
+    response_text = "🍽️ *Recetas Recomendadas para Ti*\n\n"
+    
+    # Preparar el teclado con botones para cada receta
+    keyboard = []
+    
+    # Contador para limitar número de recetas mostradas
+    count = 0
+    max_to_show = 5
+    
+    for recipe in recipes:
+        if count >= max_to_show:
+            break
+            
+        recipe_id = recipe.get('id', str(uuid.uuid4()))
+        # Buscar el nombre en 'nombre' o 'name' (compatibilidad con ambos formatos)
+        recipe_name = recipe.get('nombre', recipe.get('name', 'Sin nombre'))
+        
+        # Añadir información sobre la receta
+        response_text += f"*{count+1}. {recipe_name}*\n"
+        # También buscar descripción en 'description' o 'descripcion'
+        description = recipe.get('descripcion', recipe.get('description', ''))
+        if description:
+            # Limitar descripción a 100 caracteres
+            if len(description) > 100:
+                description = description[:97] + "..."
+            response_text += f"{description}\n"
+            
+        # Buscar tiempo de preparación en ambos idiomas
+        recipe_time = recipe.get('tiempo_prep', recipe.get('prep_time', ''))
+        if recipe_time:
+            response_text += f"⏱️ Tiempo: {recipe_time}\n"
+            
+        response_text += "\n"
+        
+        # Añadir botón para ver la receta
+        keyboard.append([
+            InlineKeyboardButton(f"Ver receta: {recipe_name}", callback_data=f"view_recipe_{recipe_id}")
+        ])
+        
+        # Registrar que se mostró esta receta al usuario
+        track_recipe_interaction(user_id, recipe_id, 'view')
+        
+        count += 1
+    
+    # Añadir botón para volver al menú principal
+    keyboard.append([InlineKeyboardButton("🔙 Volver al Menú", callback_data="main_menu")])
+    
+    # Enviar el mensaje con las recomendaciones
+    try:
+        message.reply_text(
+            response_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    except BadRequest as e:
+        logger.error(f"Error al enviar recomendaciones: {str(e)}")
+        # Intentar sin formato Markdown por si hay errores en el formato
+        try:
+            message.reply_text(
+                response_text.replace('*', ''),
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except BadRequest as e2:
+            logger.error(f"Error al enviar recomendaciones sin formato: {str(e2)}")
+            # Último intento con un mensaje simplificado
+            try:
+                simple_text = "Aquí tienes algunas recetas recomendadas para ti:"
+                message.reply_text(
+                    simple_text,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            except Exception as e3:
+                logger.error(f"No se pudieron enviar recomendaciones: {str(e3)}")
+
+def track_recipe_interaction(user_id, recipe_id, interaction_type):
+    """
+    Registra una interacción del usuario con una receta.
+    
+    Args:
+        user_id: ID del usuario
+        recipe_id: ID de la receta
+        interaction_type: Tipo de interacción (view, like, save)
+    """
+    user_info = get_user_data(user_id)
+    
+    # Inicializar estructuras si no existen
+    if 'interactions' not in user_info:
+        user_info['interactions'] = {}
+    if 'recipes' not in user_info['interactions']:
+        user_info['interactions']['recipes'] = {}
+    
+    # Guardar la interacción
+    if recipe_id not in user_info['interactions']['recipes']:
+        user_info['interactions']['recipes'][recipe_id] = {
+            'views': 0,
+            'likes': 0,
+            'saves': 0,
+            'last_interaction': None
+        }
+    
+    # Incrementar el contador correspondiente
+    if interaction_type == 'view':
+        user_info['interactions']['recipes'][recipe_id]['views'] += 1
+    elif interaction_type == 'like':
+        user_info['interactions']['recipes'][recipe_id]['likes'] += 1
+    elif interaction_type == 'save':
+        user_info['interactions']['recipes'][recipe_id]['saves'] += 1
+    
+    # Actualizar timestamp
+    user_info['interactions']['recipes'][recipe_id]['last_interaction'] = datetime.now().isoformat()
+    
+    # Asegurarse de que el perfil existe
+    if 'profile' not in user_info:
+        user_info['profile'] = {}
+        
+    # Asegurarse de que user_profile también está disponible para compatibilidad
+    user_info['user_profile'] = user_info['profile']
 
 def process_food_item(query_or_update, food_name):
     """
@@ -1772,7 +2866,7 @@ def process_food_item(query_or_update, food_name):
         return
     
     # Si no hay información nutricional básica, mostrar mensaje
-    if nutrition_info.get("calories") is None and nutrition_info.get("protein") is None:
+    if nutrition_info.get("calories") is None and nutrition_info.get("protein") is None and nutrition_info.get("carbs") is None and nutrition_info.get("fat") is None:
         send_func(
             f"No he podido encontrar información nutricional detallada para *{food_name}*. " +
             (nutrition_info.get("generated_text", "") or "Intenta con otro alimento."),
@@ -1911,8 +3005,13 @@ def handle_text(update: Update, context: CallbackContext) -> int:
             for info in all_foods_info:
                 message += f"🥗 *{info['name']}*\n"
                 
-                if info.get("calories") is not None:
-                    message += f"• Calorías: {info['calories']:.1f} kcal\n"
+                if isinstance(info['calories'], list):
+                    calories = info['calories'][0] if info['calories'] else None
+                else:
+                    calories = info['calories']
+                
+                if calories is not None:
+                    message += f"• Calorías: {calories:.1f} kcal\n"
                 if info.get("protein") is not None:
                     message += f"• Proteínas: {info['protein']:.1f} g\n"
                 if info.get("carbs") is not None:
@@ -2089,16 +3188,44 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
         
         # Verificar cada alimento detectado
         valid_foods_en = []
+        
+        # Lista de alimentos comunes que siempre deben aceptarse (en inglés)
+        common_foods_en = [
+            "egg", "rice", "potato", "carrot", "onion", "tomato", "chicken", "fish", 
+            "beef", "pork", "bread", "milk", "cheese", "apple", "banana", "orange",
+            "lettuce", "broccoli", "corn", "beans", "peas", "cucumber"
+        ]
+        
         for food in foods_en:
-            # Traducir al español para verificar si es un alimento
+            # Descartar 'food', 'meal', 'dinner' como no alimentos
+            if food.lower() in ['food', 'meal', 'dinner', 'no person']:
+                logger.info(f"DESCARTADO: '{food}' es un término general, no un alimento específico.")
+                continue
+                
+            # Si es un alimento común, aceptarlo directamente
+            if food.lower() in common_foods_en:
+                logger.info(f"ACEPTADO DIRECTAMENTE: '{food}' está en la lista de alimentos comunes.")
+                valid_foods_en.append(food)
+                continue
+                
+            # De lo contrario, traducir al español para verificar
             try:
                 food_es = food_processor.translate_text_sync(food, source_lang="en", target_lang="es")
+                logger.info(f"Verificando: '{food}' traducido a '{food_es}'")
+                
+                # Verificar si es un alimento
                 if food_processor.is_food_related(food_es):
+                    logger.info(f"ACEPTADO: '{food}' después de verificación.")
                     valid_foods_en.append(food)
+                else:
+                    logger.info(f"RECHAZADO: '{food}' no es un alimento según verificación.")
             except Exception as e:
                 logger.error(f"Error verificando alimento {food}: {str(e)}")
                 # Incluir de todas formas si hay un error en la verificación
+                logger.info(f"ACEPTADO por error: '{food}' debido a error en verificación.")
                 valid_foods_en.append(food)
+        
+        logger.info(f"Alimentos aceptados después de verificación: {valid_foods_en}")
         
         # Si no quedan alimentos válidos después del filtrado
         if not valid_foods_en:
@@ -2116,20 +3243,35 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
                 # Traducir del inglés al español
                 food_es = food_processor.translate_text_sync(food, source_lang="en", target_lang="es")
                 foods_es.append(food_es)
+                logger.info(f"Traducido: '{food}' → '{food_es}'")
             except Exception as e:
                 logger.error(f"Error traduciendo alimento {food}: {str(e)}")
                 foods_es.append(food)  # Usar el original si falla la traducción
+                logger.info(f"Usando original por error de traducción: '{food}'")
         
-        # Mensaje con los alimentos detectados
+        # Ya no necesitamos filtrar de nuevo, todos los alimentos en valid_foods_en ya pasaron la verificación
+        # Modificamos el código para usar directamente foods_es y quitar la verificación redundante
+        
+        # Mostrar alimentos detectados y mensaje de carga
+        if not foods_es:
+            retry_handler.execute_with_retry(
+                update.message.reply_text,
+                "La imagen no contiene alimentos válidos. Por favor, intenta con otra foto.",
+                reply_markup=get_action_keyboard()
+            )
+            return MAIN_MENU
+        
         foods_message = "He detectado los siguientes alimentos:\n\n"
-        for i, food_es in enumerate(foods_es):
-            food_en = valid_foods_en[i]  # Alimento original en inglés
-            confidence = detection_result["confidence_scores"].get(food_en, 0) * 100
-            foods_message += f"• {food_es} (confianza: {confidence:.1f}%)\n"
+        for food in foods_es:
+            foods_message += f"• {food}\n"
         
-        retry_handler.execute_with_retry(
+        foods_message += "\n⏳ Obteniendo información nutricional... Por favor, espera un momento."
+        
+        # Enviar mensaje de alimentos detectados y carga
+        sent_message = retry_handler.execute_with_retry(
             update.message.reply_text,
-            foods_message
+            foods_message,
+            reply_markup=None  # Sin botones durante la carga
         )
         
         try:
@@ -2139,9 +3281,12 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
             # Verificar si hay información nutricional
             if not all_foods_info:
                 logger.warning("No se obtuvo información nutricional de los alimentos detectados")
+                # Actualizar el mensaje anterior en lugar de enviar uno nuevo
                 retry_handler.execute_with_retry(
-                    update.message.reply_text,
-                    "No he podido obtener información nutricional detallada. Esto puede deberse a una limitación en nuestra base de datos.",
+                    context.bot.edit_message_text,
+                    chat_id=update.effective_chat.id,
+                    message_id=sent_message.message_id,
+                    text="No he podido obtener información nutricional detallada. Esto puede deberse a una limitación en nuestra base de datos.",
                     reply_markup=get_action_keyboard()
                 )
                 return MAIN_MENU
@@ -2163,20 +3308,53 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
                     
                     nutrition_message += f"🍽️ *{info_with_spanish_name['name']}*\n"
                     
-                    if info.get("calories") is not None:
-                        nutrition_message += f"• Calorías: {info['calories']:.1f} kcal\n"
-                        total_calories += info['calories']
+                    if isinstance(info['calories'], list):
+                        calories = info['calories'][0] if info['calories'] else None
+                    else:
+                        calories = info['calories']
+                    
+                    # Ensure calories is a number before formatting
+                    if isinstance(calories, list):
+                        calories = calories[0] if calories else None
+
+                    if calories is not None:
+                        nutrition_message += f"• Calorías: {calories:.1f} kcal\n"
+                        total_calories += calories
                     if info.get("protein") is not None:
-                        nutrition_message += f"• Proteínas: {info['protein']:.1f} g\n"
-                    if info.get("carbs") is not None:
-                        nutrition_message += f"• Carbohidratos: {info['carbs']:.1f} g\n"
-                    if info.get("fat") is not None:
-                        nutrition_message += f"• Grasas: {info['fat']:.1f} g\n"
+                        # Verificar si 'protein' es una lista y extraer el primer elemento si es necesario
+                        if isinstance(info['protein'], list):
+                            protein = info['protein'][0] if info['protein'] else None
+                        else:
+                            protein = info['protein']
+
+                        # Asegurarse de que 'protein' es un número antes de formatear
+                        if protein is not None:
+                            nutrition_message += f"• Proteínas: {protein:.1f} g\n"
+                        
+                        # Verificar si 'carbs' es una lista y extraer el primer elemento si es necesario
+                        if isinstance(info['carbs'], list):
+                            carbs = info['carbs'][0] if info['carbs'] else None
+                        else:
+                            carbs = info['carbs']
+                            
+                        # Asegurarse de que 'carbs' es un número antes de formatear
+                        if carbs is not None:
+                            nutrition_message += f"• Carbohidratos: {carbs:.1f} g\n"
+                        
+                        # Verificar si 'fat' es una lista y extraer el primer elemento si es necesario
+                        if isinstance(info['fat'], list):
+                            fat = info['fat'][0] if info['fat'] else None
+                        else:
+                            fat = info['fat']
+                            
+                        # Asegurarse de que 'fat' es un número antes de formatear
+                        if fat is not None:
+                            nutrition_message += f"• Grasas: {fat:.1f} g\n"
                     
                     nutrition_message += "\n"
                     
                     # Guardar en el historial solo si hay información nutricional válida
-                    if info.get("calories") is not None:
+                    if calories is not None:
                         user_info = get_user_data(update.effective_user.id)
                         user_info["history"].append(info_with_spanish_name)
             
@@ -2195,17 +3373,23 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
             # Mostrar calorías acumuladas
             nutrition_message += f"\n📊 Calorías acumuladas hoy: {user_info['daily_calories']:.1f} kcal"
             
+            # Actualizar el mensaje de carga con la información nutricional
             retry_handler.execute_with_retry(
-                update.message.reply_text,
-                nutrition_message,
+                context.bot.edit_message_text,
+                chat_id=update.effective_chat.id,
+                message_id=sent_message.message_id,
+                text=nutrition_message,
                 reply_markup=get_action_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
         except Exception as e:
             logger.error(f"Error procesando información nutricional: {str(e)}", exc_info=True)
+            # Actualizar el mensaje de carga con el mensaje de error
             retry_handler.execute_with_retry(
-                update.message.reply_text,
-                "He detectado los alimentos, pero ocurrió un error al procesar la información nutricional. Por favor, intenta de nuevo.",
+                context.bot.edit_message_text,
+                chat_id=update.effective_chat.id,
+                message_id=sent_message.message_id,
+                text="He detectado los alimentos, pero ocurrió un error al procesar la información nutricional. Por favor, intenta de nuevo.",
                 reply_markup=get_action_keyboard()
             )
         
@@ -2350,56 +3534,6 @@ def recipe_conversation_handler(update: Update, context: CallbackContext) -> int
     
     # Si llegamos aquí, algo salió mal, volver al menú principal
     return MAIN_MENU
-
-def save_recipe_to_json(recipe_data, user_id=None):
-    """
-    Guarda una receta en formato JSON acumulándola con las existentes.
-    
-    Args:
-        recipe_data: Diccionario con datos de la receta
-        user_id: ID del usuario que guarda la receta (opcional)
-        
-    Returns:
-        str: Ruta del archivo guardado
-    """
-    # Crear directorio si no existe
-    memory_dir = os.path.join(DATA_PATH, "processed")
-    os.makedirs(memory_dir, exist_ok=True)
-    
-    # Ruta del archivo JSON de memoria de recetas
-    json_path = os.path.join(memory_dir, "memory_recetas.json")
-    
-    # Cargar recetas existentes o crear nueva lista
-    existing_recipes = []
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                existing_data = json.load(f)
-                if isinstance(existing_data, list):
-                    existing_recipes = existing_data
-        except (json.JSONDecodeError, FileNotFoundError):
-            existing_recipes = []
-    
-    # Generar ID único para la receta si no tiene uno
-    if "id" not in recipe_data:
-        recipe_data["id"] = str(uuid.uuid4())
-    
-    # Añadir timestamp si no tiene
-    if "created_at" not in recipe_data:
-        recipe_data["created_at"] = datetime.now().isoformat()
-    
-    # Añadir user_id si se proporciona
-    if user_id is not None:
-        recipe_data["user_id"] = str(user_id)
-    
-    # Añadir la nueva receta
-    existing_recipes.append(recipe_data)
-    
-    # Guardar todas las recetas
-    with open(json_path, 'w', encoding='utf-8') as f:
-        json.dump(existing_recipes, f, ensure_ascii=False, indent=2)
-    
-    return json_path
 
 def handle_recipe_request(update: Update, context: CallbackContext) -> int:
     """Maneja la solicitud de receta basada en ingredientes."""
@@ -2893,6 +4027,9 @@ def main() -> None:
                 ],
                 REQUEST_RECIPE: [
                     MessageHandler(Filters.text & ~Filters.command, handle_recipe_request),
+                    CallbackQueryHandler(button_handler)
+                ],
+                RECOMMENDATIONS: [
                     CallbackQueryHandler(button_handler)
                 ]
             },

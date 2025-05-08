@@ -391,9 +391,37 @@ async def update_recipe(recipe_id: UUID, recipe_data: RecipeUpdate) -> Optional[
 
 
 async def delete_recipe(recipe_id: UUID) -> bool:
-    """Eliminar una receta"""
-    # TODO: Considerar eliminar RecipeIngredients asociados si es necesario
+    """Elimina una receta"""
     supabase = get_supabase_client()
+    response = supabase.table("recipes").delete().eq("id", str(recipe_id)).execute()
+    return bool(response.data)
+
+
+async def get_recipes_by_ids(recipe_ids: List[UUID]) -> List[Recipe]:
+    """
+    Obtiene múltiples recetas por sus IDs
+    
+    Args:
+        recipe_ids: Lista de UUIDs de recetas a recuperar
+        
+    Returns:
+        Lista de objetos Recipe
+    """
+    if not recipe_ids:
+        return []
+        
+    supabase = get_supabase_client()
+    
+    # Convertir UUIDs a strings
+    ids_str = [str(recipe_id) for recipe_id in recipe_ids]
+    
+    # Supabase permite filtrar con in() para múltiples valores
+    response = supabase.table("recipes").select("*").in_("id", ids_str).execute()
+    
+    if response.data:
+        return [Recipe(**item) for item in response.data]
+    return []
+
 
 async def search_recipes_by_ingredients(
     ingredient_ids: List[UUID], limit: int = 10

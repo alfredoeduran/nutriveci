@@ -109,6 +109,12 @@ class FoodProcessor:
             if os.path.exists(off_path):
                 self.food_data["open_food_facts"] = pd.read_csv(off_path)
                 print(f"✅ Cargados {len(self.food_data['open_food_facts'])} alimentos de Open Food Facts")
+            
+            # Cargar datos desde un archivo .tsv
+            open_food_facts_path = os.path.join(processed_dir, "open_food_facts.tsv")
+            if os.path.exists(open_food_facts_path):
+                self.food_data["open_food_facts"] = pd.read_csv(open_food_facts_path, sep='\t')
+                print(f"✅ Cargados {len(self.food_data['open_food_facts'])} alimentos de Open Food Facts")
         
         except Exception as e:
             print(f"❌ Error cargando datos nutricionales: {str(e)}")

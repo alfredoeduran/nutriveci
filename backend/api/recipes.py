@@ -81,3 +81,40 @@ async def delete_recipe_endpoint(recipe_id: UUID):
         raise HTTPException(status_code=500, detail="Error al eliminar la receta")
     # No se retorna contenido en un DELETE exitoso
     return
+
+
+@router.get("/recommended", response_model=List[RecipeRead])
+async def get_recommended_recipes_endpoint(
+    user_id: UUID,
+    count: int = Query(5, ge=1, le=20),
+    filter_by_profile: bool = Query(True)
+):
+    """
+    Obtiene recetas recomendadas para un usuario específico basado en su historial
+    y perfil (edad, peso, género, condiciones médicas, alergias, etc.)
+    """
+    from backend.ai.recommendation import get_recommender
+    
+    # Obtener el recomendador inicializado
+    recommender = get_recommender()
+    
+    # Obtener recomendaciones personalizadas
+    recommended_recipes = recommender.recommend_recipes(
+        user_id=str(user_id),
+        n=count,
+        filter_by_profile=filter_by_profile
+    )
+    
+    if not recommended_recipes:
+        # Si no hay recomendaciones específicas, devolver algunas recetas aleatorias
+        recipes_db = await crud.list_recipes(skip=0, limit=count)
+        return [RecipeRead.from_orm(recipe) for recipe in recipes_db]
+    
+    # Convertir IDs de recetas recomendadas a objetos Recipe completos
+    recipe_ids = [UUID(r['id'].split('_')[1]) if '_' in r['id'] else UUID(r['id']) 
+                 for r in recommended_recipes]
+    
+    recipes_db = await crud.get_recipes_by_ids(recipe_ids=recipe_ids)
+    
+    # Mapeamos a RecipeRead y retornamos
+    return [RecipeRead.from_orm(recipe) for recipe in recipes_db]
