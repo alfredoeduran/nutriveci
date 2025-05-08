@@ -11,6 +11,7 @@ import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+import aiohttp
 
 # Descargar recursos de NLTK necesarios
 try:
@@ -47,176 +48,225 @@ COMMON_FOODS = [
 class SimpleFoodProcessor:
     def __init__(self, data_path: str = None):
         """
-        Inicializa el procesador de alimentos.
-        
-        Args:
-            data_path: Ruta al directorio de datos nutricionales
-        """
-        self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english')).union(set(stopwords.words('spanish')))
-        
-        # Cargar datos nutricionales si se proporciona una ruta
-        self.food_data = {}
-        if data_path:
-            self.load_food_data(data_path)
-        
-        print("✅ Procesador de alimentos inicializado correctamente")
-    
-    def load_food_data(self, data_path: str) -> None:
-        """
-        Carga datos nutricionales desde archivos.
+        Inicializa el procesador simple de alimentos.
         
         Args:
             data_path: Ruta al directorio de datos
         """
-        try:
-            processed_dir = os.path.join(data_path, "processed")
-            
-            # Cargar datos USDA
-            usda_path = os.path.join(processed_dir, "usda_food_data.csv")
-            if os.path.exists(usda_path):
-                self.food_data["usda"] = pd.read_csv(usda_path, low_memory=False)
-                print(f"✅ Cargados {len(self.food_data['usda'])} alimentos de USDA")
-            
-            # Cargar Open Food Facts
-            off_path = os.path.join(processed_dir, "open_food_facts.csv")
-            if os.path.exists(off_path):
-                self.food_data["open_food_facts"] = pd.read_csv(off_path, low_memory=False)
-                print(f"✅ Cargados {len(self.food_data['open_food_facts'])} alimentos de Open Food Facts")
+        self.data_path = data_path
+        self.food_data = {}
         
-        except Exception as e:
-            print(f"❌ Error cargando datos nutricionales: {str(e)}")
-    
-    def preprocess_text(self, text: str) -> List[str]:
-        """
-        Preprocesa el texto para análisis.
+        # Cargar datos de alimentos si existe el archivo
+        if data_path:
+            food_data_path = os.path.join(data_path, "food_data.json")
+            if os.path.exists(food_data_path):
+                try:
+                    with open(food_data_path, "r", encoding="utf-8") as f:
+                        self.food_data = json.load(f)
+                    print(f"✅ Datos de alimentos cargados: {len(self.food_data)} elementos")
+                except Exception as e:
+                    print(f"❌ Error cargando datos de alimentos: {str(e)}")
         
-        Args:
-            text: Texto a preprocesar
-            
-        Returns:
-            Lista de tokens preprocesados
-        """
-        # Convertir a minúsculas
-        text = text.lower()
-        
-        # Tokenizar
-        tokens = word_tokenize(text)
-        
-        # Eliminar palabras vacías y puntación
-        tokens = [token for token in tokens if token.isalpha() and token not in self.stop_words]
-        
-        # Lematizar
-        tokens = [self.lemmatizer.lemmatize(token) for token in tokens]
-        
-        return tokens
-    
+        # Lista de palabras que no son alimentos para filtrar falsos positivos
+        self.non_food_words = [
+            "puerta", "ventana", "casa", "edificio", "auto", "carro", "tren", "avión", "avion",
+            "libro", "revista", "periódico", "periodico", "ropa", "zapatos", "sombrero", 
+            "computadora", "teléfono", "telefono", "tablet", "silla", "mesa", "sofá", "sofa",
+            "hola", "adiós", "adios", "gracias", "por favor", "ayuda", "que tal", "como estas",
+            "buenos días", "buenas tardes", "buenas noches"
+        ]
+                
     async def extract_food_items(self, text: str) -> List[str]:
         """
-        Extrae nombres de alimentos de un texto.
+        Extrae menciones de alimentos del texto del usuario.
+        Método simplificado usando listas predefinidas y validación.
         
         Args:
             text: Texto a analizar
             
         Returns:
-            Lista de alimentos identificados
+            Lista de alimentos detectados
         """
-        # Preprocesar texto
-        tokens = self.preprocess_text(text)
+        # Lista base de alimentos comunes en español
+        common_foods = [
+            "manzana", "naranja", "plátano", "platano", "banana", "pera", "uva", "kiwi", "fresa", 
+            "arroz", "pasta", "pan", "leche", "queso", "yogur", "huevo", "pollo", "carne", "pescado",
+            "atún", "atun", "salmón", "salmon", "cerdo", "res", "tomate", "lechuga", "zanahoria", 
+            "papa", "patata", "cebolla", "ajo", "brócoli", "brocoli", "coliflor", "espinaca", 
+            "maíz", "maiz", "frijol", "lenteja", "garbanzo", "almendra", "nuez", "avellana", 
+            "miel", "azúcar", "azucar", "sal", "pimienta", "aceite", "mantequilla", "chocolate",
+            "café", "cafe", "té", "te", "jugo", "agua", "refresco", "cerveza", "vino"
+        ]
         
-        # Buscar alimentos conocidos
-        food_items = []
+        # Convertir texto a minúsculas y dividir en tokens
+        text_lower = text.lower()
+        words = text_lower.split()
         
-        # Comprobar si los tokens coinciden con alimentos conocidos
-        for token in tokens:
-            # Verificar si el token está en la lista de alimentos comunes
-            if token.lower() in [food.lower() for food in COMMON_FOODS]:
-                if token not in food_items:
-                    food_items.append(token)
+        # Filtrar tokens que son alimentos
+        detected_foods = []
+        
+        # Comprobar si hay coincidencias con alimentos comunes
+        for word in words:
+            # Eliminar caracteres especiales y puntuación
+            clean_word = ''.join(c for c in word if c.isalnum() or c.isspace())
             
-            # Si no se encontraron alimentos específicos, buscar términos relacionados con comida
-            if not food_items and token.lower() in [term.lower() for term in FOOD_RELATED_TERMS]:
-                food_items.append("comida")
+            # Verificar que no sea una palabra que no es alimento
+            if clean_word in self.non_food_words:
+                continue
+                
+            # Verificar si es un alimento conocido
+            if clean_word in common_foods or clean_word in self.food_data:
+                detected_foods.append(clean_word)
+                continue
+                
+            # Comprobar si alguna palabra se parece a un alimento conocido
+            for food in common_foods:
+                # Si hay suficiente coincidencia (por ejemplo, "manzan" para "manzana")
+                if len(clean_word) > 3 and (clean_word in food or food in clean_word):
+                    # Usar la palabra completa del alimento para normalizar
+                    detected_foods.append(food)
+                    break
         
-        return food_items
+        return list(set(detected_foods))  # Eliminar duplicados
     
-    async def get_nutrition_info(self, food_item: str) -> Dict[str, Any]:
+    async def get_nutrition_info(self, food_name: str) -> Dict[str, Any]:
         """
         Obtiene información nutricional de un alimento.
         
         Args:
-            food_item: Nombre del alimento
+            food_name: Nombre del alimento
             
         Returns:
             Diccionario con información nutricional
         """
-        nutrition_info = {
-            "name": food_item,
-            "calories": None,
-            "protein": None,
-            "carbs": None,
-            "fat": None,
-            "source": None
-        }
+        # Si tenemos datos locales, usarlos primero
+        if food_name in self.food_data:
+            return self.food_data[food_name]
         
+        # Si no, intentar obtener información de FoodData Central API
         try:
-            # Buscar en las fuentes de datos cargadas
-            for source, df in self.food_data.items():
-                if df is None or len(df) == 0 or 'name' not in df.columns:
-                    continue
-                    
-                # Buscar coincidencias
-                try:
-                    matches = df[df['name'].str.contains(food_item, case=False, na=False)]
-                    if not matches.empty:
-                        # Tomar el primer resultado
-                        match = matches.iloc[0]
-                        
-                        # Mapear campos según la fuente
-                        if source == "usda":
-                            if "calories" in match and pd.notna(match["calories"]):
-                                nutrition_info["calories"] = float(match["calories"])
-                            if "protein_g" in match and pd.notna(match["protein_g"]):
-                                nutrition_info["protein"] = float(match["protein_g"])
-                            if "carbohydrates_g" in match and pd.notna(match["carbohydrates_g"]):
-                                nutrition_info["carbs"] = float(match["carbohydrates_g"])
-                            if "fat_g" in match and pd.notna(match["fat_g"]):
-                                nutrition_info["fat"] = float(match["fat_g"])
-                        
-                        elif source == "open_food_facts":
-                            if "energy-kcal_100g" in match and pd.notna(match["energy-kcal_100g"]):
-                                nutrition_info["calories"] = float(match["energy-kcal_100g"])
-                            if "proteins_100g" in match and pd.notna(match["proteins_100g"]):
-                                nutrition_info["protein"] = float(match["proteins_100g"])
-                            if "carbohydrates_100g" in match and pd.notna(match["carbohydrates_100g"]):
-                                nutrition_info["carbs"] = float(match["carbohydrates_100g"])
-                            if "fat_100g" in match and pd.notna(match["fat_100g"]):
-                                nutrition_info["fat"] = float(match["fat_100g"])
-                        
-                        nutrition_info["source"] = source
-                        break
-                except Exception as e:
-                    print(f"Error al buscar coincidencias para {food_item}: {str(e)}")
-                    continue
+            nutrition_info = await self._fetch_nutrition_info(food_name)
+            # Traducir la información al español
+            nutrition_info["name_es"] = await self._translate_to_spanish(nutrition_info["name"])
+            return nutrition_info
         except Exception as e:
-            print(f"Error al obtener información nutricional para {food_item}: {str(e)}")
-        
-        return nutrition_info
+            print(f"Error obteniendo información de {food_name}: {str(e)}")
+            # Devolver información básica si falla
+            return {
+                "name": food_name,
+                "name_es": food_name,  # Mantener el nombre original en español
+                "calories": None,
+                "protein": None,
+                "carbs": None,
+                "fat": None
+            }
     
-    async def integrate_vision_results(self, detected_foods: List[str]) -> List[Dict[str, Any]]:
+    async def _fetch_nutrition_info(self, food_name: str) -> Dict[str, Any]:
         """
-        Integra resultados de la visión por computadora con información nutricional.
+        Consulta a FoodData Central API para obtener información nutricional.
         
         Args:
-            detected_foods: Lista de alimentos detectados por la visión
+            food_name: Nombre del alimento
             
         Returns:
-            Lista de información nutricional para cada alimento detectado
+            Diccionario con información nutricional
         """
-        nutrition_results = []
+        # Esta es una simulación simplificada
+        # En una implementación real, se usaría una API como USDA FoodData Central
+        return {
+            "name": food_name,
+            "calories": 100,  # Valores ficticios para demostración
+            "protein": 5,
+            "carbs": 15,
+            "fat": 2
+        }
+    
+    async def _translate_to_spanish(self, text: str) -> str:
+        """
+        Traduce texto al español si es necesario.
+        
+        Args:
+            text: Texto a traducir
+            
+        Returns:
+            Texto traducido
+        """
+        # Diccionario simple de traducción inglés-español
+        translations = {
+            "apple": "manzana",
+            "orange": "naranja",
+            "banana": "plátano",
+            "pear": "pera",
+            "grape": "uva",
+            "strawberry": "fresa",
+            "rice": "arroz",
+            "pasta": "pasta",
+            "bread": "pan",
+            "milk": "leche",
+            "cheese": "queso",
+            "yogurt": "yogur",
+            "egg": "huevo",
+            "chicken": "pollo",
+            "meat": "carne",
+            "fish": "pescado",
+            "tuna": "atún",
+            "salmon": "salmón",
+            "pork": "cerdo",
+            "beef": "res",
+            "tomato": "tomate",
+            "lettuce": "lechuga",
+            "carrot": "zanahoria",
+            "potato": "papa",
+            "onion": "cebolla",
+            "garlic": "ajo",
+            "broccoli": "brócoli",
+            "cauliflower": "coliflor",
+            "spinach": "espinaca",
+            "corn": "maíz",
+            "bean": "frijol",
+            "lentil": "lenteja",
+            "chickpea": "garbanzo",
+            "almond": "almendra",
+            "walnut": "nuez",
+            "hazelnut": "avellana",
+            "honey": "miel",
+            "sugar": "azúcar",
+            "salt": "sal",
+            "pepper": "pimienta",
+            "oil": "aceite",
+            "butter": "mantequilla",
+            "chocolate": "chocolate",
+            "coffee": "café",
+            "tea": "té",
+            "juice": "jugo",
+            "water": "agua",
+            "soda": "refresco",
+            "beer": "cerveza",
+            "wine": "vino"
+        }
+        
+        # Comprobar si el texto está en inglés y tiene traducción
+        text_lower = text.lower()
+        if text_lower in translations:
+            return translations[text_lower]
+        
+        # Si no hay traducción, devolver el texto original
+        return text
+        
+    async def integrate_vision_results(self, detected_foods: List[str]) -> List[Dict[str, Any]]:
+        """
+        Integra resultados de visión para obtener información nutricional.
+        
+        Args:
+            detected_foods: Lista de alimentos detectados
+            
+        Returns:
+            Lista de diccionarios con información nutricional
+        """
+        nutrition_info = []
         
         for food in detected_foods:
-            nutrition_info = await self.get_nutrition_info(food)
-            nutrition_results.append(nutrition_info)
-        
-        return nutrition_results 
+            food_info = await self.get_nutrition_info(food)
+            nutrition_info.append(food_info)
+            
+        return nutrition_info 

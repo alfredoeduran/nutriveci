@@ -107,8 +107,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response.get("error"):
             await update.message.reply_text(f"Error: {response['error']}")
         else:
+            # Si se reconoce como alimento o tema relacionado, enviar la respuesta normal
+            # Si no, se enviará la explicación del bot
             await update.message.reply_text(response["generated_text"])
             
+            # Si hay sugerencias de recetas adicionales, enviarlas en un mensaje separado
+            if "Recetas sugeridas:" in response["generated_text"]:
+                # La respuesta ya incluye las recetas sugeridas
+                pass
+                
     except Exception as e:
         print(f"[ERROR] Error procesando mensaje: {str(e)}")
         await update.message.reply_text(

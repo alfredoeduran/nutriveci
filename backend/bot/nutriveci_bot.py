@@ -106,7 +106,29 @@ DATA_PATH = os.path.join(ROOT_DIR, "data")
 food_detector = FoodDetector()
 
 class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
-    """Extensión del procesador Gemini con funcionalidades adicionales."""
+    """Extensión del procesador Gemini con funcionalidades adicionales e integración con la API NLP."""
+    
+    def __init__(self, data_path=None):
+        super().__init__(data_path)
+        # URL base para la API (configurable por variable de entorno)
+        self.api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        # Diccionario de alimentos comunes (español -> inglés)
+        self.common_foods = {
+            "manzana": "apple", "naranja": "orange", "plátano": "banana", "platano": "banana", 
+            "pera": "pear", "uva": "grape", "kiwi": "kiwi", "fresa": "strawberry", 
+            "arroz": "rice", "pasta": "pasta", "pan": "bread", "leche": "milk", 
+            "queso": "cheese", "yogur": "yogurt", "huevo": "egg", "pollo": "chicken", 
+            "carne": "meat", "pescado": "fish", "atún": "tuna", "atun": "tuna", 
+            "salmón": "salmon", "salmon": "salmon", "cerdo": "pork", "res": "beef", 
+            "tomate": "tomato", "lechuga": "lettuce", "zanahoria": "carrot", 
+            "papa": "potato", "patata": "potato", "cebolla": "onion", "ajo": "garlic", 
+            "brócoli": "broccoli", "brocoli": "broccoli", "coliflor": "cauliflower", "espinaca": "spinach",
+            "maíz": "corn", "maiz": "corn", "frijol": "bean", "frijoles": "beans",
+            "lenteja": "lentil", "lentejas": "lentils", "garbanzo": "chickpea", 
+            "garbanzos": "chickpeas", "pimiento": "pepper", "azúcar": "sugar", "azucar": "sugar",
+            "sal": "salt", "aceite": "oil", "mantequilla": "butter", "chocolate": "chocolate",
+            "café": "coffee", "cafe": "coffee", "té": "tea", "te": "tea", "agua": "water"
+        }
     
     def translate_text_sync(self, text, source_lang="es", target_lang="en"):
         """
@@ -125,7 +147,7 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
             # Aquí usamos una implementación simplificada
             # Ejemplo:
             if source_lang == "es" and target_lang == "en":
-                # Diccionario simple de traducción español-inglés
+                # Diccionario ampliado de traducción español-inglés
                 translations = {
                     "arroz": "rice",
                     "pollo": "chicken",
@@ -136,6 +158,7 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
                     "carne": "meat",
                     "pescado": "fish",
                     "frijoles": "beans",
+                    "frijol": "bean",
                     "pan": "bread",
                     "tomate": "tomato",
                     "zanahoria": "carrot",
@@ -144,12 +167,106 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
                     "queso": "cheese",
                     "manzana": "apple",
                     "plátano": "banana",
+                    "platano": "banana",
                     "pasta": "pasta",
                     "azúcar": "sugar",
-                    "sal": "salt"
+                    "azucar": "sugar",
+                    "sal": "salt",
+                    "pimienta": "pepper",
+                    "aceite": "oil",
+                    "mantequilla": "butter",
+                    "agua": "water",
+                    "café": "coffee",
+                    "cafe": "coffee",
+                    "té": "tea",
+                    "te": "tea",
+                    "naranja": "orange",
+                    "limón": "lemon",
+                    "limon": "lemon",
+                    "lechuga": "lettuce",
+                    "papa": "potato",
+                    "patata": "potato",
+                    "cerdo": "pork",
+                    "res": "beef",
+                    "atún": "tuna",
+                    "atun": "tuna",
+                    "salmón": "salmon",
+                    "salmon": "salmon",
+                    "maíz": "corn",
+                    "maiz": "corn",
+                    "avena": "oatmeal",
+                    "chocolate": "chocolate",
+                    "fresa": "strawberry",
+                    "uva": "grape",
+                    "pera": "pear",
+                    "durazno": "peach",
+                    "piña": "pineapple",
+                    "mango": "mango",
+                    "yogur": "yogurt",
+                    "yogurt": "yogurt",
+                    "calabaza": "pumpkin",
+                    "espinaca": "spinach",
+                    "coliflor": "cauliflower",
+                    "habas": "beans",
+                    "lentejas": "lentils",
+                    "garbanzos": "chickpeas"
                 }
                 
                 # Si está en el diccionario, devolver traducción; de lo contrario, mantener original
+                return translations.get(text.lower(), text)
+            elif source_lang == "en" and target_lang == "es":
+                # Diccionario ampliado de traducción inglés-español
+                translations = {
+                    "rice": "arroz",
+                    "chicken": "pollo",
+                    "egg": "huevo",
+                    "broccoli": "brócoli",
+                    "milk": "leche",
+                    "meat": "carne",
+                    "fish": "pescado",
+                    "beans": "frijoles",
+                    "bean": "frijol",
+                    "bread": "pan",
+                    "tomato": "tomate",
+                    "carrot": "zanahoria",
+                    "onion": "cebolla",
+                    "garlic": "ajo",
+                    "cheese": "queso", 
+                    "apple": "manzana",
+                    "banana": "plátano",
+                    "pasta": "pasta",
+                    "sugar": "azúcar",
+                    "salt": "sal",
+                    "pepper": "pimienta",
+                    "oil": "aceite",
+                    "butter": "mantequilla",
+                    "water": "agua",
+                    "coffee": "café",
+                    "tea": "té",
+                    "orange": "naranja",
+                    "lemon": "limón",
+                    "lettuce": "lechuga",
+                    "potato": "papa",
+                    "pork": "cerdo",
+                    "beef": "res",
+                    "tuna": "atún",
+                    "salmon": "salmón",
+                    "corn": "maíz",
+                    "oatmeal": "avena",
+                    "chocolate": "chocolate",
+                    "strawberry": "fresa",
+                    "grape": "uva",
+                    "pear": "pera",
+                    "peach": "durazno",
+                    "pineapple": "piña",
+                    "mango": "mango",
+                    "yogurt": "yogur",
+                    "pumpkin": "calabaza",
+                    "spinach": "espinaca",
+                    "cauliflower": "coliflor",
+                    "lentils": "lentejas",
+                    "chickpeas": "garbanzos"
+                }
                 return translations.get(text.lower(), text)
             else:
                 # Para otras combinaciones de idiomas, devolver el texto original
@@ -157,177 +274,883 @@ class ExtendedGeminiFoodProcessor(GeminiFoodProcessor):
         except Exception as e:
             logger.error(f"Error en traducción: {str(e)}")
             return text  # Devolver el texto original si hay un error
+    
+    def check_food_with_nlp_api(self, text, user_id=None):
+        """
+        Consulta la API NLP para determinar si el texto es un alimento y obtener información.
+        
+        Args:
+            text: Texto a analizar
+            user_id: ID del usuario (opcional)
+            
+        Returns:
+            dict: Respuesta del modelo con información sobre si es comida, intención, etc.
+        """
+        try:
+            # Log inicial para depuración
+            logger.info(f"API_CHECK: Verificando si '{text}' es un alimento...")
+            
+            # Lista extendida de palabras comunes que NO son alimentos (para filtrado)
+            non_food_words = [
+                # Construcción y objetos de casa
+                "puerta", "ventana", "casa", "edificio", "auto", "carro", "tren", "avión", "avion",
+                "silla", "mesa", "sofá", "sofa", "escritorio", "cama", "armario", "estante", "escalera",
+                "piso", "techo", "pared", "azulejo", "ladrillo", "cemento", "piedra", "madera", "clavo",
+                "tornillo", "martillo", "destornillador", "taladro", "pintura", "pincel", "rodillo",
+                # Objetos personales y electrónicos
+                "libro", "revista", "periódico", "periodico", "ropa", "zapatos", "sombrero", 
+                "computadora", "teléfono", "telefono", "tablet", "televisor", "televisión", "radio",
+                "reloj", "bolso", "cartera", "llave", "billetera", "moneda", "billete", "laptop",
+                # Materiales
+                "plástico", "plastico", "vidrio", "metal", "papel", "cartón", "carton", "tela",
+                "algodón", "algodon", "lana", "cuero", "hierro", "acero", "cobre", "aluminio",
+                # Lugares
+                "oficina", "escuela", "hospital", "tienda", "parque", "jardín", "jardin", "calle",
+                "avenida", "carretera", "autopista", "ciudad", "pueblo", "país", "pais", "continente",
+                # Otras categorías irrelevantes
+                "hola", "adiós", "adios", "gracias", "por favor", "ayuda", "que tal", "como estas"
+            ]
+            
+            # Preparar texto para análisis
+            text_lower = text.lower()
+            words = text_lower.split()
+            
+            # Paso 1: Verificación prioritaria - Rechazar inmediatamente si contiene palabras de la lista negra
+            for word in words:
+                if word in non_food_words:
+                    logger.info(f"API_CHECK: Palabra no-alimento detectada inmediatamente: '{word}' en '{text}'. RESULTADO: NO ES ALIMENTO")
+                    return {
+                        "is_food": False,
+                        "intent": "otro",
+                        "entities": {},
+                        "generated_text": f"Lo siento, '{text}' no parece ser un alimento. Puedo ayudarte con información sobre alimentos como arroz, pollo, manzana, etc.",
+                        "source": "strict_non_food_filter"
+                    }
+            
+            # Paso 2: Verificar si hay coincidencia directa con alimentos conocidos
+            food_matches = []
+            for word in words:
+                if word in self.common_foods:
+                    food_matches.append(word)
+                    
+            if food_matches:
+                logger.info(f"API_CHECK: Alimentos detectados localmente: {food_matches} en '{text}'. RESULTADO: ES ALIMENTO")
+                # Convertir a entidades para la respuesta
+                entities = {f"food_{i}": food for i, food in enumerate(food_matches, 1)}
+                return {
+                    "is_food": True,
+                    "intent": "consultar_ingrediente",
+                    "entities": entities,
+                    "generated_text": f"Encontré información sobre {', '.join(food_matches)}.",
+                    "source": "common_food_lookup"
+                }
+            
+            # Paso 3: Verificación con Gemini para consultas que no estamos seguros
+            # Consultar directamente a Gemini si el texto se refiere a un alimento
+            try:
+                food_check_prompt = f"""
+                TAREA: Determina si el texto "{text}" se refiere a un alimento o bebida que los humanos consumen normalmente.
+                
+                RESPONDE ÚNICAMENTE con "SI" (si es un alimento/bebida) o "NO" (si no es un alimento/bebida).
+                
+                Ejemplos:
+                - "manzana" → SI
+                - "arroz" → SI
+                - "puerta" → NO
+                - "cemento" → NO
+                - "escritorio" → NO
+                - "edificio" → NO
+                - "agua" → SI
+                - "carne" → SI
+                - "café" → SI
+                - "piedra" → NO
+                """
+                
+                food_check_response = self.model.generate_content(food_check_prompt)
+                is_food_gemini = food_check_response.text.strip().upper() == "SI"
+                
+                if not is_food_gemini:
+                    logger.info(f"Gemini directamente indica que '{text}' NO es un alimento")
+                    return {
+                        "is_food": False,
+                        "intent": "otro",
+                        "entities": {},
+                        "generated_text": f"Lo siento, '{text}' no parece ser un alimento. Puedo ayudarte con información sobre alimentos como arroz, pollo, manzana, etc.",
+                        "source": "gemini_direct_check"
+                    }
+            except Exception as e:
+                logger.warning(f"Error en la verificación directa con Gemini: {str(e)}")
+                # Si falla la verificación directa, continuar con el flujo normal
+            
+            # Paso 4: Si no hay coincidencia directa, consultar la API NLP
+            import requests
+            
+            # Punto final de la API NLP
+            nlp_url = f"{self.api_base_url}/api/nlp/interpret"
+            
+            # Crear payload
+            payload = {
+                "text": text,
+                "user_id": str(user_id) if user_id else "unknown",
+                "source": "telegram"
+            }
+            
+            # Realizar solicitud a la API
+            response = requests.post(nlp_url, json=payload, timeout=10)
+            
+            # Verificar si la respuesta es exitosa
+            if response.status_code == 200:
+                api_response = response.json()
+                
+                # Si la respuesta contiene "is_food", usarla directamente
+                if "is_food" in api_response:
+                    return {
+                        "is_food": api_response.get("is_food", False),
+                        "intent": api_response.get("intent", "desconocido"),
+                        "entities": api_response.get("entities", {}),
+                        "generated_text": api_response.get("generated_text", ""),
+                        "source": "nlp_api"
+                    }
+                # Si no contiene "is_food", deducirlo de la intención
+                else:
+                    intent = api_response.get("intent", "")
+                    is_food = "buscar_receta" in intent or "consultar_ingrediente" in intent
+                    return {
+                        "is_food": is_food,
+                        "intent": intent,
+                        "entities": api_response.get("entities", {}),
+                        "generated_text": api_response.get("generated_text", ""),
+                        "source": "nlp_api"
+                    }
+            else:
+                # Paso 5: Si la API falla, intentar una detección de similitud con alimentos conocidos
+                logger.warning(f"Error de API NLP: {response.status_code} - Usando detección fallback")
+                
+                # Verificar similitud parcial con alimentos conocidos
+                partial_matches = []
+                for word in words:
+                    if len(word) >= 4:  # Palabras muy cortas pueden dar falsos positivos
+                        for food in self.common_foods:
+                            # Si hay una coincidencia parcial (ej: "manz" para "manzana")
+                            if (word in food or food in word) and word not in partial_matches:
+                                # Verificar que la palabra no esté en la lista de no-alimentos
+                                if word not in non_food_words:
+                                    partial_matches.append(food)
+                                    break
+                
+                if partial_matches:
+                    logger.info(f"Alimentos detectados por similitud: {partial_matches}")
+                    entities = {f"food_{i}": food for i, food in enumerate(partial_matches, 1)}
+                    return {
+                        "is_food": True,
+                        "intent": "consultar_ingrediente",
+                        "entities": entities,
+                        "generated_text": f"Encontré información sobre {', '.join(partial_matches)}.",
+                        "source": "partial_match"
+                    }
+                
+                # Si no hay coincidencias, devolver error
+                return {
+                    "is_food": False,
+                    "error": f"Error comunicándose con la API: {response.status_code}",
+                    "generated_text": f"No pude determinar si '{text}' es un alimento. Por favor, intenta nuevamente con un nombre de alimento específico.",
+                    "source": "error"
+                }
+                
+        except Exception as e:
+            # Capturar excepciones y devolver respuesta de error
+            logger.error(f"Excepción consultando API NLP: {str(e)}")
+            return {
+                "is_food": False,
+                "error": f"Error: {str(e)}",
+                "generated_text": f"Ocurrió un error procesando tu consulta. Por favor, intenta nuevamente.",
+                "source": "error"
+            }
+    
+    def is_food_related(self, text, user_id=None):
+        """
+        Determina si un texto está relacionado con alimentos usando la API NLP y validación adicional.
+        
+        Args:
+            text: Texto a analizar.
+            user_id: ID del usuario para contexto (opcional)
+            
+        Returns:
+            bool: True si está relacionado con alimentos, False en caso contrario.
+        """
+        # Log inicial para depuración
+        logger.info(f"FOOD_CHECK: Verificando si '{text}' es un alimento...")
+        
+        # Paso 1: Verificación rápida con lista local de alimentos comunes
+        text_lower = text.lower()
+        words = text_lower.split()
+        
+        # Verificar si hay palabras que no son alimentos (lista expandida)
+        non_food_words = [
+            # Construcción y objetos de casa
+            "puerta", "ventana", "casa", "edificio", "auto", "carro", "tren", "avión", "avion",
+            "silla", "mesa", "sofá", "sofa", "escritorio", "cama", "armario", "estante", "escalera",
+            "piso", "techo", "pared", "azulejo", "ladrillo", "cemento", "piedra", "madera", "clavo",
+            "tornillo", "martillo", "destornillador", "taladro", "pintura", "pincel", "rodillo",
+            # Objetos personales y electrónicos
+            "libro", "revista", "periódico", "periodico", "ropa", "zapatos", "sombrero", 
+            "computadora", "teléfono", "telefono", "tablet", "televisor", "televisión", "radio",
+            "reloj", "bolso", "cartera", "llave", "billetera", "moneda", "billete", "laptop",
+            # Materiales
+            "plástico", "plastico", "vidrio", "metal", "papel", "cartón", "carton", "tela",
+            "algodón", "algodon", "lana", "cuero", "hierro", "acero", "cobre", "aluminio",
+            # Lugares
+            "oficina", "escuela", "hospital", "tienda", "parque", "jardín", "jardin", "calle",
+            "avenida", "carretera", "autopista", "ciudad", "pueblo", "país", "pais", "continente",
+            # Otras categorías irrelevantes
+            "hola", "adiós", "adios", "gracias", "por favor", "ayuda", "que tal", "como estas"
+        ]
+        
+        # Si CUALQUIER palabra en la consulta está en la lista de no-alimentos, retornar False
+        for word in words:
+            if word in non_food_words:
+                logger.info(f"FOOD_CHECK: Palabra '{word}' encontrada en lista de no-alimentos. RESULTADO: NO ES ALIMENTO")
+                return False
+        
+        # Verificar coincidencia directa con alimentos conocidos
+        food_match_found = False
+        for word in words:
+            if word in self.common_foods:
+                logger.info(f"FOOD_CHECK: Palabra '{word}' encontrada en diccionario de alimentos. RESULTADO: ES ALIMENTO")
+                food_match_found = True
+                break
+        
+        # Si se encontró una coincidencia directa con un alimento conocido, retornar True
+        if food_match_found:
+            return True
+        
+        # VERIFICACIÓN DIRECTA CON GEMINI
+        # Esta verificación es crítica para palabras que no están en nuestras listas
+        try:
+            # Construir prompt para verificación específica de si es alimento
+            food_check_prompt = f"""
+            TAREA: Determina si el texto "{text}" se refiere a un alimento o bebida que los humanos consumen normalmente.
+            
+            RESPONDE ÚNICAMENTE con "SI" (si es un alimento/bebida) o "NO" (si no es un alimento/bebida).
+            
+            Ejemplos que son alimentos (respuesta = SI):
+            - "manzana"
+            - "arroz"
+            - "agua"
+            - "café"
+            - "carne"
+            
+            Ejemplos que NO son alimentos (respuesta = NO):
+            - "puerta"
+            - "cemento"
+            - "escritorio"
+            - "edificio"
+            - "piedra"
+            - "ventana"
+            """
+            
+            # Llamar a Gemini y obtener respuesta
+            food_check_response = self.model.generate_content(food_check_prompt)
+            response_text = food_check_response.text.strip().upper()
+            
+            # Registrar la respuesta exacta
+            logger.info(f"FOOD_CHECK: Respuesta de Gemini para '{text}': '{response_text}'")
+            
+            # Evaluar la respuesta
+            if response_text == "NO" or "NO" in response_text:
+                logger.info(f"FOOD_CHECK: Gemini indica que '{text}' NO es un alimento. RESULTADO: NO ES ALIMENTO")
+                return False
+            elif response_text == "SI" or "SÍ" in response_text or "SI" in response_text:
+                logger.info(f"FOOD_CHECK: Gemini indica que '{text}' ES un alimento. RESULTADO: ES ALIMENTO")
+                return True
+            else:
+                logger.warning(f"FOOD_CHECK: Respuesta ambigua de Gemini para '{text}': '{response_text}'")
+                # Si la respuesta es ambigua, continuar con otras verificaciones
+        
+        except Exception as e:
+            logger.error(f"FOOD_CHECK: Error consultando Gemini: {str(e)}")
+            # Si hay un error, continuar con otras verificaciones
+        
+        # Paso 2: Usar la API NLP como verificación secundaria
+        try:
+            result = self.check_food_with_nlp_api(text, user_id)
+            is_food = result.get("is_food", False)
+            logger.info(f"FOOD_CHECK: Verificación por API NLP para '{text}' resultado: {is_food}")
+            
+            if is_food:
+                return True
+            
+            # Si la API dice que no es alimento, hacer una verificación final de similitud
+            # Comprobar similitud parcial con alimentos conocidos
+            food_similarity_found = False
+            matching_food = None
+            
+            for word in words:
+                if len(word) >= 4:  # Ignorar palabras muy cortas
+                    for food in self.common_foods:
+                        if word in food or food in word:
+                            logger.info(f"FOOD_CHECK: Similitud parcial: '{word}' similar a '{food}'")
+                            food_similarity_found = True
+                            matching_food = food
+                            break
+                    if food_similarity_found:
+                        break
+            
+            # Si se encontró similitud, verificar que no sea palabra prohibida
+            if food_similarity_found:
+                # Verificación adicional: si la palabra completa está en non_food_words, rechazar
+                for word in words:
+                    full_word_match = False
+                    for food in self.common_foods:
+                        if word == food:  # Solo coincidencia exacta
+                            full_word_match = True
+                            break
+                    
+                    if not full_word_match and word in non_food_words:
+                        logger.info(f"FOOD_CHECK: Palabra '{word}' encontrada en lista de no-alimentos. RESULTADO: NO ES ALIMENTO")
+                        return False
+                
+                logger.info(f"FOOD_CHECK: Similitud parcial aceptada para '{text}' similar a '{matching_food}'. RESULTADO: ES ALIMENTO")
+                return True
+            
+            # Si llegamos aquí y ninguna verificación dio positivo, comprobar una última vez con Gemini
+            try:
+                # Construir un prompt más específico
+                category_prompt = f"""
+                ¿La palabra o frase "{text}" se refiere a un alimento/comida/bebida que los humanos consumen, o es otra cosa?
+                
+                Ejemplos de alimentos: manzana, arroz, agua, café, pollo, pan, queso, azúcar
+                Ejemplos de NO alimentos: puerta, escritorio, cemento, edificio, silla, computadora
+                
+                Responde ÚNICAMENTE 'ALIMENTO' o 'NO ALIMENTO', sin más texto.
+                """
+                
+                category_response = self.model.generate_content(category_prompt)
+                category_text = category_response.text.strip().upper()
+                
+                logger.info(f"FOOD_CHECK: Segunda verificación con Gemini para '{text}': '{category_text}'")
+                
+                if "NO ALIMENTO" in category_text or "NO ES ALIMENTO" in category_text:
+                    logger.info(f"FOOD_CHECK: Segunda verificación confirma que '{text}' NO es alimento. RESULTADO: NO ES ALIMENTO")
+                    return False
+                elif "ALIMENTO" in category_text and "NO ALIMENTO" not in category_text:
+                    logger.info(f"FOOD_CHECK: Segunda verificación confirma que '{text}' ES alimento. RESULTADO: ES ALIMENTO")
+                    return True
+            except Exception as e:
+                logger.error(f"FOOD_CHECK: Error en segunda verificación con Gemini: {str(e)}")
+                # Continuar con el flujo normal en caso de error
+        
+        except Exception as e:
+            logger.error(f"FOOD_CHECK: Error general en verificación de alimento: {str(e)}")
+            # En caso de error, ser conservador y asumir que no es alimento
+            return False
+        
+        # Si llegamos aquí, no encontramos evidencia suficiente para considerarlo un alimento
+        logger.info(f"FOOD_CHECK: No hay evidencia suficiente para '{text}'. RESULTADO: NO ES ALIMENTO")
+        return False
+    
+    def extract_food_items_sync(self, text, user_id=None):
+        """
+        Extrae alimentos del texto de forma síncrona usando la API NLP.
+        
+        Args:
+            text: Texto a analizar.
+            user_id: ID del usuario para contexto (opcional)
+            
+        Returns:
+            list: Lista de alimentos encontrados.
+        """
+        # Consultar la API NLP
+        result = self.check_food_with_nlp_api(text, user_id)
+        
+        # Extraer entidades si es un alimento
+        if result.get("is_food", False):
+            entities = result.get("entities", {})
+            
+            # Manejar diferentes formatos de entidades
+            if isinstance(entities, dict):
+                # Si es diccionario, extraer valores
+                return list(entities.values())
+            elif isinstance(entities, list):
+                # Si ya es lista, usarla directamente
+                return entities
+            else:
+                # Si es otro tipo, intentar convertirlo a lista
+                try:
+                    return [str(entities)]
+                except:
+                    return []
+        
+        # Si no es alimento o hay error, devolver lista vacía
+        return []
+    
+    def load_usda_food_data(self, food_name):
+        """
+        Busca información nutricional en el dataset USDA.
+        
+        Args:
+            food_name: Nombre del alimento a buscar
+            
+        Returns:
+            dict: Información nutricional o None si no se encuentra
+        """
+        try:
+            import pandas as pd
+            
+            # Ruta al dataset USDA
+            usda_path = os.path.join(self.data_path, "processed", "usda_food_data.csv")
+            
+            if not os.path.exists(usda_path):
+                logger.warning(f"Dataset USDA no encontrado en {usda_path}")
+                return None
+            
+            # Cargar dataset (sólo columnas necesarias para optimizar memoria)
+            usda_df = pd.read_csv(usda_path, low_memory=False, 
+                               usecols=["name", "calories", "protein_g", "carbohydrates_g", "fat_g"])
+            
+            # Buscar coincidencias
+            food_name_lower = food_name.lower()
+            matches = usda_df[usda_df["name"].str.lower().str.contains(food_name_lower, na=False)]
+            
+            if not matches.empty:
+                # Tomar el primer resultado
+                match = matches.iloc[0]
+                
+                return {
+                    "name": match["name"],
+                    "calories": float(match["calories"]) if pd.notna(match["calories"]) else None,
+                    "protein": float(match["protein_g"]) if pd.notna(match["protein_g"]) else None,
+                    "carbs": float(match["carbohydrates_g"]) if pd.notna(match["carbohydrates_g"]) else None,
+                    "fat": float(match["fat_g"]) if pd.notna(match["fat_g"]) else None,
+                    "source": "usda"
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error buscando en USDA: {str(e)}")
+            return None
+    
+    def generate_nutrition_info(self, food_name):
+        """
+        Genera información nutricional usando Gemini cuando no hay datos disponibles.
+        
+        Args:
+            food_name: Nombre del alimento
+            
+        Returns:
+            dict: Información nutricional generada
+        """
+        try:
+            # Prompt para generar información nutricional
+            prompt = f"""
+            Genera información nutricional aproximada para: {food_name}
+            
+            Responde SOLO en formato JSON con esta estructura exacta:
+            {{
+              "calories": [calorías por 100g - número],
+              "protein": [proteínas en gramos por 100g - número],
+              "carbs": [carbohidratos en gramos por 100g - número],
+              "fat": [grasas en gramos por 100g - número]
+            }}
+            
+            No incluyas texto adicional, solo el JSON.
+            """
+            
+            # Generar respuesta con Gemini
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Parsear el JSON de la respuesta
+            import re
+            import json
+            
+            # Buscar el JSON en la respuesta
+            json_match = re.search(r'({.*})', response_text, re.DOTALL)
+            if json_match:
+                response_json = json.loads(json_match.group(1))
+                
+                # Construir respuesta
+                return {
+                    "name": food_name,
+                    "calories": response_json.get("calories"),
+                    "protein": response_json.get("protein"),
+                    "carbs": response_json.get("carbs"),
+                    "fat": response_json.get("fat"),
+                    "source": "gemini_generated"
+                }
+            
+            # Fallback si no se puede parsear JSON
+            return {
+                "name": food_name,
+                "calories": 100,  # Valores de ejemplo
+                "protein": 5,
+                "carbs": 15,
+                "fat": 2,
+                "source": "gemini_fallback"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generando información nutricional: {str(e)}")
+            # Valores de fallback
+            return {
+                "name": food_name,
+                "calories": 100,
+                "protein": 5,
+                "carbs": 15,
+                "fat": 2,
+                "source": "gemini_error"
+            }
+    
+    def get_nutrition_info_sync(self, food_name, user_id=None):
+        """
+        Obtiene información nutricional de forma síncrona consultando primero la API NLP.
+        
+        Args:
+            food_name: Nombre del alimento
+            user_id: ID del usuario (opcional)
+            
+        Returns:
+            dict: Información nutricional
+        """
+        # Consultar la API NLP primero
+        nlp_result = self.check_food_with_nlp_api(food_name, user_id)
+        
+        # Si no es un alimento según NLP, devolver respuesta de error
+        if not nlp_result.get("is_food", False):
+            return {
+                "name": food_name,
+                "calories": None,
+                "protein": None,
+                "carbs": None,
+                "fat": None,
+                "is_food": False,
+                "generated_text": nlp_result.get("generated_text", "")
+            }
+        
+        # Si es un alimento, proceder a obtener información nutricional
+        logger.info(f"Obteniendo información nutricional para: {food_name}")
+        
+        # Guardar el nombre original en español
+        food_name_es = food_name  
+        
+        # Traducir al inglés para buscar en las bases de datos
+        food_name_en = self.translate_text_sync(food_name, "es", "en")
+        logger.info(f"Nombre traducido al inglés: {food_name_en}")
+        
+        # Buscar en dataset USDA
+        usda_info = self.load_usda_food_data(food_name_en)
+        
+        # Si se encontró en USDA, usar esa información
+        if usda_info:
+            logger.info(f"Encontrada información en USDA para: {food_name_en}")
+            
+            # Asegurarse de usar el nombre en español
+            usda_info["name_en"] = usda_info.get("name", food_name_en)  # Guardar nombre en inglés
+            usda_info["name"] = food_name_es  # Usar nombre en español como principal
+            usda_info["is_food"] = True
+            
+            # Generar texto descriptivo con Gemini
+            description = self.generate_food_description(food_name_es, usda_info)
+            
+            # Verificar y asegurar que la descripción esté en español
+            if any(word in description.lower() for word in ["the", "and", "with", "food", "provides"]):
+                logger.warning(f"La descripción parece estar en inglés, traduciéndola")
+                description = self.translate_text_sync(description, "en", "es")
+            
+            usda_info["generated_text"] = description
+            return usda_info
+        
+        # Si no está en USDA, generar con Gemini
+        logger.info(f"No se encontró en USDA, generando información para: {food_name_en}")
+        generated_info = self.generate_nutrition_info(food_name_en)
+        
+        # Asegurarse de usar el nombre en español
+        generated_info["name_en"] = food_name_en  # Guardar nombre en inglés
+        generated_info["name"] = food_name_es  # Usar nombre en español como principal
+        generated_info["is_food"] = True
+        
+        # Generar texto descriptivo con Gemini
+        description = self.generate_food_description(food_name_es, generated_info)
+        
+        # Verificar y asegurar que la descripción esté en español
+        if any(word in description.lower() for word in ["the", "and", "with", "food", "provides"]):
+            logger.warning(f"La descripción parece estar en inglés, traduciéndola")
+            description = self.translate_text_sync(description, "en", "es")
+        
+        generated_info["generated_text"] = description
+        return generated_info
+    
+    def generate_food_description(self, food_name, nutrition_info):
+        """
+        Genera una descripción del alimento con Gemini en español.
+        
+        Args:
+            food_name: Nombre del alimento
+            nutrition_info: Información nutricional
+            
+        Returns:
+            str: Descripción generada en español
+        """
+        try:
+            # Construir prompt con información nutricional
+            calories = nutrition_info.get("calories", "desconocidas")
+            protein = nutrition_info.get("protein", "desconocida")
+            carbs = nutrition_info.get("carbs", "desconocidos")
+            fat = nutrition_info.get("fat", "desconocida")
+            
+            prompt = f"""
+            INSTRUCCIONES: Genera una descripción nutricional COMPLETAMENTE EN ESPAÑOL para el alimento: {food_name}
+            
+            IMPORTANTE: Tu respuesta DEBE estar TOTALMENTE en ESPAÑOL. NO USES NINGUNA PALABRA EN INGLÉS.
+            
+            Información nutricional disponible (por 100g):
+            - Calorías: {calories} kcal
+            - Proteínas: {protein} g
+            - Carbohidratos: {carbs} g
+            - Grasas: {fat} g
+            
+            Incluye:
+            1. Breve descripción del alimento
+            2. Beneficios para la salud
+            3. Formas recomendadas de consumo
+            4. Un dato nutricional interesante
+            
+            FORMATO: Responde DIRECTAMENTE con el texto, sin títulos ni secciones. 
+            La respuesta debe ser completa pero concisa (máx. 150 palabras).
+            La respuesta debe estar COMPLETAMENTE EN ESPAÑOL.
+            """
+            
+            # Generar respuesta con Gemini
+            response = self.model.generate_content(prompt)
+            description = response.text.strip()
+            
+            # Verificar si la respuesta contiene palabras en inglés comunes
+            english_words = ["the", "with", "and", "food", "provides", "contains", "rich", "source", "health", "benefits"]
+            has_english = any(word in description.lower().split() for word in english_words)
+            
+            # Si parece estar en inglés, intentar de nuevo con un prompt más explícito
+            if has_english:
+                logger.warning(f"Descripción parece contener palabras en inglés. Regenerando en español puro.")
+                
+                spanish_prompt = f"""
+                TAREA: Describe el alimento "{food_name}" y sus propiedades nutricionales.
+                
+                REQUISITO CRÍTICO: La respuesta DEBE estar TOTALMENTE EN ESPAÑOL, sin ninguna palabra en inglés.
+                
+                Datos (por 100g):
+                - Calorías: {calories} kcal
+                - Proteínas: {protein} g
+                - Carbohidratos: {carbs} g
+                - Grasas: {fat} g
+                
+                Incluye: descripción, beneficios, consumo y dato interesante.
+                Sé breve pero completo (máx 150 palabras).
+                RESPONDE ÚNICAMENTE EN ESPAÑOL.
+                """
+                
+                response = self.model.generate_content(spanish_prompt)
+                description = response.text.strip()
+                
+                # Verificar una vez más
+                if any(word in description.lower().split() for word in english_words):
+                    # Traducir al español como último recurso
+                    description = self.translate_text_sync(description, "en", "es")
+            
+            return description
+            
+        except Exception as e:
+            logger.error(f"Error generando descripción: {str(e)}")
+            # Fallback simple
+            return f"{food_name} es un alimento que aporta aproximadamente {nutrition_info.get('calories', 100)} kcal por cada 100g. Es recomendable incluirlo en una dieta balanceada."
 
 food_processor = ExtendedGeminiFoodProcessor(DATA_PATH)
 
 # Estados para el ConversationHandler
-MAIN_MENU, TEXT_FOOD, IMAGE_FOOD, COMPLETE_MEAL_MENU, FOOD_HISTORY = range(5)
-CREATE_RECIPE, ADD_INGREDIENTS, VIEW_RECIPES, REQUEST_RECIPE = range(5, 9)
+MAIN_MENU, TEXT_FOOD, IMAGE_FOOD, COMPLETE_MEAL_MENU, FOOD_HISTORY, CREATE_RECIPE, ADD_INGREDIENTS, VIEW_RECIPES, REQUEST_RECIPE = range(9)
 
-# Datos de usuario (en memoria - en producción usar base de datos)
-user_data = {}
-
-# Contexto para la creación de recetas
-recipe_context = {}
+# Datos temporales
+recipe_context = {}  # Almacena contexto durante creación de recetas
+user_data = {}  # Almacena datos de usuarios
 
 def get_user_data(user_id):
-    """Obtiene o crea datos de usuario."""
+    """
+    Obtiene o inicializa los datos de un usuario.
+    
+    Args:
+        user_id: ID del usuario
+        
+    Returns:
+        dict: Datos del usuario
+    """
     if user_id not in user_data:
         user_data[user_id] = {
-            "history": [],
-            "daily_calories": 0,
-            "last_date": datetime.now().strftime("%Y-%m-%d")
+            "history": [],  # Historial de búsquedas
+            "daily_calories": 0.0,  # Calorías acumuladas hoy
+            "preferences": {},  # Preferencias del usuario
+            "last_interaction": datetime.now().isoformat()  # Última interacción
         }
-    
-    # Resetear calorías si es un nuevo día
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    if user_data[user_id]["last_date"] != current_date:
-        user_data[user_id]["daily_calories"] = 0
-        user_data[user_id]["last_date"] = current_date
-    
     return user_data[user_id]
 
 def get_main_menu_keyboard():
-    """Genera el teclado para el menú principal."""
+    """
+    Genera el teclado para el menú principal.
+    
+    Returns:
+        InlineKeyboardMarkup: Teclado con botones
+    """
     keyboard = [
         [InlineKeyboardButton("🥗 Ingresar alimento", callback_data='food_input')],
         [InlineKeyboardButton("🍽️ Ingresar plato completo", callback_data='meal_input')],
-        [InlineKeyboardButton("🔍 Solicitar receta", callback_data='request_recipe')],
+        [InlineKeyboardButton("📋 Ver historial", callback_data='history')],
+        [InlineKeyboardButton("📊 Calorías acumuladas", callback_data='calories')],
         [InlineKeyboardButton("📖 Mis recetas", callback_data='view_recipes')],
-        [InlineKeyboardButton("📝 Historial de búsquedas", callback_data='history')],
-        [InlineKeyboardButton("📊 Calorías acumuladas del día", callback_data='calories')]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def get_complete_meal_menu_keyboard():
-    """Genera el teclado para el menú de plato completo."""
-    keyboard = [
-        [InlineKeyboardButton("📝 Texto", callback_data='meal_text')],
-        [InlineKeyboardButton("🖼️ Imagen", callback_data='meal_image')],
-        [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
+        [InlineKeyboardButton("🧪 Crear receta", callback_data='create_recipe')],
+        [InlineKeyboardButton("🔍 Solicitar receta", callback_data='request_recipe')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_food_input_keyboard():
-    """Genera el teclado para el menú de ingreso de alimentos."""
-    # Obtener alimentos sugeridos (comunes)
-    suggested_foods = ["Pollo", "Arroz", "Manzana", "Pan", "Leche"]
+    """
+    Genera el teclado con alimentos comunes sugeridos.
     
-    keyboard = []
-    # Crear botones para cada alimento sugerido
-    for i in range(0, len(suggested_foods), 2):
-        row = []
-        row.append(InlineKeyboardButton(suggested_foods[i], callback_data=f'food_{suggested_foods[i]}'))
-        if i + 1 < len(suggested_foods):
-            row.append(InlineKeyboardButton(suggested_foods[i+1], callback_data=f'food_{suggested_foods[i+1]}'))
-        keyboard.append(row)
+    Returns:
+        InlineKeyboardMarkup: Teclado con botones
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton("🍚 Arroz", callback_data='food_arroz'),
+            InlineKeyboardButton("🥚 Huevo", callback_data='food_huevo'),
+            InlineKeyboardButton("🐔 Pollo", callback_data='food_pollo')
+        ],
+        [
+            InlineKeyboardButton("🥦 Brócoli", callback_data='food_brócoli'),
+            InlineKeyboardButton("🥛 Leche", callback_data='food_leche'),
+            InlineKeyboardButton("🍎 Manzana", callback_data='food_manzana')
+        ],
+        [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def get_complete_meal_menu_keyboard():
+    """
+    Genera el teclado para ingresar plato completo.
     
-    # Botón para volver al menú principal
-    keyboard.append([InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')])
-    
+    Returns:
+        InlineKeyboardMarkup: Teclado con botones
+    """
+    keyboard = [
+        [InlineKeyboardButton("📝 Texto (separado por comas)", callback_data='meal_text')],
+        [InlineKeyboardButton("🖼️ Foto del plato", callback_data='meal_image')],
+        [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_action_keyboard():
-    """Genera el teclado para las acciones rápidas."""
+    """
+    Genera el teclado con acciones después de mostrar información.
+    
+    Returns:
+        InlineKeyboardMarkup: Teclado con botones
+    """
     keyboard = [
-        [InlineKeyboardButton("🏠 Menú principal", callback_data='main_menu')],
-        [InlineKeyboardButton("🗑️ Limpiar historial", callback_data='clear_history')],
-        [InlineKeyboardButton("👀 Ver últimos alimentos", callback_data='recent_foods')]
+        [InlineKeyboardButton("➕ Agregar otro alimento", callback_data='food_input')],
+        [InlineKeyboardButton("📋 Ver historial", callback_data='history')],
+        [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_recipe_menu_keyboard():
-    """Genera el teclado para el menú de recetas."""
+    """
+    Genera el teclado para el menú de creación de receta.
+    
+    Returns:
+        InlineKeyboardMarkup: Teclado con botones
+    """
     keyboard = [
         [InlineKeyboardButton("➕ Agregar ingredientes", callback_data='add_ingredients')],
         [InlineKeyboardButton("💾 Guardar receta", callback_data='save_recipe')],
-        [InlineKeyboardButton("❌ Cancelar", callback_data='cancel_recipe')],
-        [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
+        [InlineKeyboardButton("❌ Cancelar", callback_data='cancel_recipe')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 def get_ingredients_keyboard():
-    """Genera el teclado para agregar ingredientes."""
+    """
+    Genera el teclado para agregar ingredientes.
+    
+    Returns:
+        InlineKeyboardMarkup: Teclado con botones
+    """
     keyboard = [
-        [InlineKeyboardButton("✅ Terminar de agregar ingredientes", callback_data='finish_adding')],
-        [InlineKeyboardButton("❌ Cancelar", callback_data='cancel_recipe')],
-        [InlineKeyboardButton("🔙 Volver al menú principal", callback_data='main_menu')]
+        [InlineKeyboardButton("✅ Terminar de agregar", callback_data='finish_adding')],
+        [InlineKeyboardButton("❌ Cancelar", callback_data='cancel_recipe')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Comandos
 def start(update: Update, context: CallbackContext) -> int:
-    """Maneja el comando /start y presenta el menú principal."""
+    """Inicia la conversación y muestra el menú principal."""
     user = update.effective_user
     
-    # Inicializar datos de usuario
+    # Inicializar datos de usuario si no existen
     get_user_data(user.id)
     
-    welcome_message = f"""
-¡Hola {user.first_name}! Soy *NutriVeci*, tu asistente nutricional. 🥗
-
-Puedo ayudarte con:
-• Información nutricional de alimentos
-• Análisis de platos completos
-• Creación y gestión de recetas
-• Seguimiento de calorías diarias
-• Recomendaciones alimenticias
-
-¿En qué puedo ayudarte hoy?
-"""
-    
+    # Mensaje de bienvenida
     update.message.reply_text(
-        welcome_message,
-        reply_markup=get_main_menu_keyboard(),
-        parse_mode=ParseMode.MARKDOWN
+        f"Hola {user.first_name}! 👋\n\n"
+        "Soy NutriVeci 🥗, tu asistente nutricional personal.\n\n"
+        "¿Qué te gustaría hacer hoy?",
+        reply_markup=get_main_menu_keyboard()
+    )
+    
+    return MAIN_MENU
+
+def menu_command(update: Update, context: CallbackContext) -> int:
+    """Muestra el menú principal."""
+    update.message.reply_text(
+        "Menú Principal - Selecciona una opción:",
+        reply_markup=get_main_menu_keyboard()
     )
     
     return MAIN_MENU
 
 def help_command(update: Update, context: CallbackContext) -> None:
-    """Maneja el comando /help."""
-    help_text = """
-*Comandos disponibles:*
-/start - Iniciar o reiniciar el bot
-/help - Mostrar esta ayuda
-/menu - Mostrar el menú principal
-/reset - Reiniciar las calorías del día
-
-*Funciones:*
-• *Ingresar alimento* - Obtén información nutricional de un alimento específico
-• *Ingresar plato completo* - Analiza varios alimentos a la vez o una imagen
-• *Crear receta* - Crea y guarda recetas personalizadas
-• *Mis recetas* - Consulta tus recetas guardadas
-• *Historial* - Revisa tus búsquedas recientes
-• *Calorías del día* - Consulta tu consumo calórico diario
-
-Para comenzar, usa /start o /menu.
-"""
-    update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
-
-def menu_command(update: Update, context: CallbackContext) -> int:
-    """Maneja el comando /menu y muestra el menú principal."""
+    """Muestra información de ayuda."""
     update.message.reply_text(
-        "¿Qué te gustaría hacer?",
-        reply_markup=get_main_menu_keyboard()
+        "🔍 *Guía de NutriVeci* 🥗\n\n"
+        "• Usa el menú para navegar por las opciones\n"
+        "• Consulta información de alimentos individuales\n"
+        "• Analiza platos completos con fotos o texto\n"
+        "• Revisa tu historial de consultas\n"
+        "• Crea y guarda tus propias recetas\n\n"
+        "Para volver al menú principal en cualquier momento, escribe /menu.",
+        parse_mode=ParseMode.MARKDOWN
     )
-    return MAIN_MENU
 
-def reset_command(update: Update, context: CallbackContext) -> None:
-    """Reinicia el contador de calorías diarias."""
+def reset_command(update: Update, context: CallbackContext) -> int:
+    """Reinicia los datos del usuario."""
     user_id = update.effective_user.id
-    user_info = get_user_data(user_id)
-    user_info["daily_calories"] = 0
+    
+    # Reiniciar datos
+    if user_id in user_data:
+        user_data[user_id] = {
+            "history": [],
+            "daily_calories": 0.0,
+            "preferences": {},
+            "last_interaction": datetime.now().isoformat()
+        }
     
     update.message.reply_text(
-        "✅ ¡Contador de calorías diarias reiniciado!",
-        reply_markup=get_action_keyboard()
+        "✅ Datos reiniciados correctamente.\n"
+        "Tu historial y calorías acumuladas han sido borrados.",
+        reply_markup=get_main_menu_keyboard()
     )
+    
+    return MAIN_MENU
 
-# Manejadores de callback queries (botones)
 def button_handler(update: Update, context: CallbackContext) -> int:
-    """Maneja los callbacks de los botones inline."""
+    """Maneja las interacciones con botones."""
     query = update.callback_query
+    
     try:
         query.answer()
     except Exception as e:
@@ -932,14 +1755,27 @@ def process_food_item(query_or_update, food_name):
         # Mensaje de espera
         query_or_update.message.reply_text("Analizando el alimento... ⏳")
     
-    # Obtener información nutricional
-    nutrition_info = food_processor.get_nutrition_info_sync(food_name)
+    # Consultar a API NLP para determinar si es un alimento y obtener información
+    nutrition_info = food_processor.get_nutrition_info_sync(food_name, user_id)
     
-    # Construir mensaje con la información
-    if nutrition_info["calories"] is None and nutrition_info["protein"] is None:
-        # No se encontró información
+    # Si no es un alimento, mostrar mensaje de la API NLP (generado por Gemini)
+    if not nutrition_info.get("is_food", False):
+        generated_text = nutrition_info.get("generated_text", "")
+        if not generated_text:
+            generated_text = f"Lo sentimos, '{food_name}' no parece ser un alimento. Puedo proporcionarte información sobre alimentos y nutrición. Prueba con alimentos como: pollo, arroz, manzana, leche, etc."
+        
         send_func(
-            f"No he podido encontrar información nutricional para *{food_name}*.",
+            generated_text,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Si no hay información nutricional básica, mostrar mensaje
+    if nutrition_info.get("calories") is None and nutrition_info.get("protein") is None:
+        send_func(
+            f"No he podido encontrar información nutricional detallada para *{food_name}*. " +
+            (nutrition_info.get("generated_text", "") or "Intenta con otro alimento."),
             reply_markup=get_action_keyboard(),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -950,32 +1786,65 @@ def process_food_item(query_or_update, food_name):
     user_info["history"].append(nutrition_info)
     
     # Actualizar calorías diarias si hay información
-    if nutrition_info["calories"] is not None:
-        user_info["daily_calories"] += nutrition_info["calories"]
+    if nutrition_info.get("calories") is not None:
+        user_info["daily_calories"] += nutrition_info.get("calories", 0)
     
-    # Construir mensaje simplificado (solo calorías)
-    message = f"🥗 *{nutrition_info['name']}*\n\n"
-    
-    if nutrition_info["calories"] is not None:
-        message += f"• Calorías: {nutrition_info['calories']:.1f} kcal\n"
+    # Usar el texto generado por Gemini si está disponible
+    if "generated_text" in nutrition_info and nutrition_info["generated_text"]:
+        # Construir mensaje con la información generada por Gemini
+        message = f"🥗 *{nutrition_info['name']}*\n\n"
+        message += nutrition_info["generated_text"] + "\n\n"
+        
+        # Añadir información nutricional resumida
+        message += "*Información nutricional por 100g:*\n"
+        if nutrition_info.get("calories") is not None:
+            message += f"• Calorías: {nutrition_info['calories']:.1f} kcal\n"
+        if nutrition_info.get("protein") is not None:
+            message += f"• Proteínas: {nutrition_info['protein']:.1f} g\n"
+        if nutrition_info.get("carbs") is not None:
+            message += f"• Carbohidratos: {nutrition_info['carbs']:.1f} g\n"
+        if nutrition_info.get("fat") is not None:
+            message += f"• Grasas: {nutrition_info['fat']:.1f} g\n"
+        
+        # Mostrar calorías acumuladas
+        message += f"\n📊 Calorías acumuladas hoy: {user_info['daily_calories']:.1f} kcal"
+        
+        send_func(
+            message,
+            reply_markup=get_action_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
     else:
-        message += "• Calorías: No disponible\n"
-    
-    # Mostrar calorías acumuladas
-    message += f"\n📊 Calorías acumuladas hoy: {user_info['daily_calories']:.1f} kcal"
-    
-    send_func(
-        message,
-        reply_markup=get_action_keyboard(),
-        parse_mode=ParseMode.MARKDOWN
-    )
+        # Construir mensaje simplificado (para caso de fallback)
+        message = f"🥗 *{nutrition_info['name']}*\n\n"
+        
+        if nutrition_info.get("calories") is not None:
+            message += f"• Calorías: {nutrition_info['calories']:.1f} kcal\n"
+        else:
+            message += "• Calorías: No disponible\n"
+        
+        if nutrition_info.get("protein") is not None:
+            message += f"• Proteínas: {nutrition_info['protein']:.1f} g\n"
+        if nutrition_info.get("carbs") is not None:
+            message += f"• Carbohidratos: {nutrition_info['carbs']:.1f} g\n"
+        if nutrition_info.get("fat") is not None:
+            message += f"• Grasas: {nutrition_info['fat']:.1f} g\n"
+            
+        # Mostrar calorías acumuladas
+        message += f"\n📊 Calorías acumuladas hoy: {user_info['daily_calories']:.1f} kcal"
+        
+        send_func(
+            message,
+            reply_markup=get_action_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
-# Manejadores de mensajes
 def handle_text(update: Update, context: CallbackContext) -> int:
     """Maneja los mensajes de texto para detectar alimentos."""
     text = update.message.text
+    user_id = update.effective_user.id
     
-    # Detectar si es una lista de alimentos (separados por comas)
+    # Verificar si hay comas para determinar si es una lista de alimentos
     if ',' in text:
         # Mensaje de espera
         wait_message = update.message.reply_text("Analizando los alimentos... ⏳")
@@ -991,38 +1860,50 @@ def handle_text(update: Update, context: CallbackContext) -> int:
             return MAIN_MENU
         
         try:
-            # Traducir alimentos al inglés para mejor procesamiento
-            english_food_items = []
+            # Verificar cada alimento utilizando la API NLP
+            valid_foods = []
             for food in food_items:
-                translated = food_processor.translate_text_sync(food, "es", "en")
-                english_food_items.append(translated)
-                
-            logger.info(f"Alimentos traducidos: {english_food_items}")
+                if food_processor.is_food_related(food, user_id):
+                    valid_foods.append(food)
             
-            # Procesar cada alimento
+            # Si no se identificaron alimentos válidos
+            if not valid_foods:
+                # Obtener una respuesta generada por Gemini para un caso de error
+                nlp_result = food_processor.check_food_with_nlp_api(text, user_id)
+                
+                context.bot.delete_message(
+                    chat_id=update.effective_chat.id,
+                    message_id=wait_message.message_id
+                )
+                
+                update.message.reply_text(
+                    nlp_result.get("generated_text", 
+                    "No he podido identificar alimentos válidos en tu mensaje. Por favor, intenta de nuevo con alimentos como: pollo, arroz, manzana, etc."),
+                    reply_markup=get_main_menu_keyboard(),
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                return MAIN_MENU
+            
+            # Procesar cada alimento válido
             all_foods_info = []
             total_calories = 0
             
-            for i, food in enumerate(food_items):
-                # Obtener información nutricional usando el nombre traducido para búsqueda
-                nutrition_info = food_processor.get_nutrition_info_sync(english_food_items[i])
-                
-                # Restaurar el nombre original en español para mostrarlo al usuario
-                nutrition_info["name"] = food
-                
+            for food in valid_foods:
+                # Obtener información nutricional
+                nutrition_info = food_processor.get_nutrition_info_sync(food, user_id)
                 all_foods_info.append(nutrition_info)
                 
                 # Acumular calorías
-                if nutrition_info["calories"] is not None:
-                    total_calories += nutrition_info["calories"]
+                if nutrition_info.get("calories") is not None:
+                    total_calories += nutrition_info.get("calories", 0)
                 
                 # Guardar en el historial
-                user_info = get_user_data(update.effective_user.id)
+                user_info = get_user_data(user_id)
                 user_info["history"].append(nutrition_info)
                 
                 # Actualizar calorías diarias
-                if nutrition_info["calories"] is not None:
-                    user_info["daily_calories"] += nutrition_info["calories"]
+                if nutrition_info.get("calories") is not None:
+                    user_info["daily_calories"] += nutrition_info.get("calories", 0)
             
             # Construir mensaje con todos los alimentos
             message = "🍽️ *Información nutricional del plato:*\n\n"
@@ -1030,27 +1911,45 @@ def handle_text(update: Update, context: CallbackContext) -> int:
             for info in all_foods_info:
                 message += f"🥗 *{info['name']}*\n"
                 
-                if info["calories"] is not None:
+                if info.get("calories") is not None:
                     message += f"• Calorías: {info['calories']:.1f} kcal\n"
-                if info["protein"] is not None:
+                if info.get("protein") is not None:
                     message += f"• Proteínas: {info['protein']:.1f} g\n"
-                if info["carbs"] is not None:
+                if info.get("carbs") is not None:
                     message += f"• Carbohidratos: {info['carbs']:.1f} g\n"
-                if info["fat"] is not None:
+                if info.get("fat") is not None:
                     message += f"• Grasas: {info['fat']:.1f} g\n"
                 
                 message += "\n"
             
             message += f"*Total de calorías del plato: {total_calories:.1f} kcal*\n\n"
             
-            # Recomendaciones
-            message += "💡 *Recomendaciones:*\n"
-            message += "• Procura mantener una alimentación variada\n"
-            message += "• No olvides incluir frutas y verduras\n"
-            message += "• Bebe suficiente agua durante el día\n"
+            # Generar recomendaciones con Gemini
+            try:
+                foods_str = ", ".join(valid_foods)
+                prompt = f"""
+                Genera una breve recomendación nutricional en español para un plato que contiene estos alimentos: {foods_str}
+                
+                La recomendación debe:
+                1. Ser corta (máximo 3 puntos)
+                2. Incluir consejos prácticos
+                3. Estar totalmente en español
+                
+                Responde solo con los puntos, sin introducción ni conclusión. Cada punto debe comenzar con un emoji relevante.
+                """
+                
+                recommendations = food_processor.model.generate_content(prompt)
+                message += "💡 *Recomendaciones:*\n" + recommendations.text.strip() + "\n"
+            except Exception as e:
+                logger.error(f"Error generando recomendaciones: {str(e)}")
+                # Recomendaciones predeterminadas
+                message += "💡 *Recomendaciones:*\n"
+                message += "• Procura mantener una alimentación variada\n"
+                message += "• No olvides incluir frutas y verduras\n"
+                message += "• Bebe suficiente agua durante el día\n"
             
             # Mostrar calorías acumuladas
-            user_info = get_user_data(update.effective_user.id)
+            user_info = get_user_data(user_id)
             message += f"\n📊 Calorías acumuladas hoy: {user_info['daily_calories']:.1f} kcal"
             
             # Eliminar mensaje de espera
@@ -1080,9 +1979,21 @@ def handle_text(update: Update, context: CallbackContext) -> int:
                 "Lo siento, tuve un problema procesando los alimentos. Por favor, intenta de nuevo.",
                 reply_markup=get_main_menu_keyboard()
             )
-        
     else:
-        # Procesar como un solo alimento
+        # Consultar a la API NLP para validar si es alimento
+        nlp_result = food_processor.check_food_with_nlp_api(text, user_id)
+        
+        # Si no es un alimento según la API, mostrar el mensaje generado
+        if not nlp_result.get("is_food", False):
+            update.message.reply_text(
+                nlp_result.get("generated_text", 
+                "Lo sentimos, tu mensaje no parece estar relacionado con alimentos. Soy un asistente nutricional que puede proporcionarte información sobre alimentos y recetas. Prueba preguntándome sobre alimentos como: pollo, arroz, manzana, etc."),
+                reply_markup=get_main_menu_keyboard(),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return MAIN_MENU
+        
+        # Procesar como un solo alimento si es válido
         process_food_item(update, text)
     
     return MAIN_MENU
@@ -1176,9 +2087,31 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
         # Obtener los alimentos detectados (en inglés)
         foods_en = detection_result["detected_foods"]
         
+        # Verificar cada alimento detectado
+        valid_foods_en = []
+        for food in foods_en:
+            # Traducir al español para verificar si es un alimento
+            try:
+                food_es = food_processor.translate_text_sync(food, source_lang="en", target_lang="es")
+                if food_processor.is_food_related(food_es):
+                    valid_foods_en.append(food)
+            except Exception as e:
+                logger.error(f"Error verificando alimento {food}: {str(e)}")
+                # Incluir de todas formas si hay un error en la verificación
+                valid_foods_en.append(food)
+        
+        # Si no quedan alimentos válidos después del filtrado
+        if not valid_foods_en:
+            retry_handler.execute_with_retry(
+                update.message.reply_text,
+                "La imagen no contiene alimentos válidos. Por favor, intenta con otra foto.",
+                reply_markup=get_action_keyboard()
+            )
+            return MAIN_MENU
+        
         # Traducir al español para mostrarlos al usuario
         foods_es = []
-        for food in foods_en:
+        for food in valid_foods_en:
             try:
                 # Traducir del inglés al español
                 food_es = food_processor.translate_text_sync(food, source_lang="en", target_lang="es")
@@ -1190,7 +2123,7 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
         # Mensaje con los alimentos detectados
         foods_message = "He detectado los siguientes alimentos:\n\n"
         for i, food_es in enumerate(foods_es):
-            food_en = foods_en[i]  # Alimento original en inglés
+            food_en = valid_foods_en[i]  # Alimento original en inglés
             confidence = detection_result["confidence_scores"].get(food_en, 0) * 100
             foods_message += f"• {food_es} (confianza: {confidence:.1f}%)\n"
         
@@ -1201,7 +2134,7 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
         
         try:
             # Obtener información nutricional de los alimentos (usando nombres en inglés)
-            all_foods_info = food_processor.integrate_vision_results_sync(foods_en)
+            all_foods_info = food_processor.integrate_vision_results_sync(valid_foods_en)
             
             # Verificar si hay información nutricional
             if not all_foods_info:
@@ -1213,7 +2146,7 @@ def handle_photo(update: Update, context: CallbackContext) -> int:
                 )
                 return MAIN_MENU
             
-            # Construir mensaje con información nutricional
+            # Construir mensaje con información nutricional en español
             nutrition_message = "📊 *Información nutricional:*\n\n"
             total_calories = 0
             
@@ -1470,27 +2403,124 @@ def save_recipe_to_json(recipe_data, user_id=None):
 
 def handle_recipe_request(update: Update, context: CallbackContext) -> int:
     """Maneja la solicitud de receta basada en ingredientes."""
-    # Obtener ingredientes
+    user_id = update.effective_user.id
     text = update.message.text
+    
+    # Registro inicial para depuración
+    logger.info(f"RECIPE_REQUEST: Solicitud de receta con texto: '{text}'")
     
     # Tratar de separar los ingredientes por comas, si hay
     if ',' in text:
         ingredients = [item.strip() for item in text.split(',') if item.strip()]
+        logger.info(f"RECIPE_REQUEST: Ingredientes extraídos por comas: {ingredients}")
     else:
-        # Si no hay comas, tratar cada palabra como ingrediente potencial
-        words = text.split()
-        # Usar el procesador Gemini para extraer alimentos del texto
-        try:
-            ingredients = food_processor.extract_food_items_sync(text)
-            if not ingredients:  # Si no detecta alimentos específicos
-                ingredients = words  # Usar las palabras como ingredientes
-        except Exception as e:
-            logger.error(f"Error extrayendo alimentos del texto: {str(e)}")
-            ingredients = words  # En caso de error, usar palabras como respaldo
+        # Si no hay comas, consultar a la API NLP para extraer alimentos
+        logger.info(f"RECIPE_REQUEST: No hay comas, usando API NLP para extraer alimentos")
+        nlp_result = food_processor.check_food_with_nlp_api(text, user_id)
+        
+        # Extraer entidades de alimentos de la respuesta
+        if nlp_result.get("is_food", False):
+            entities = nlp_result.get("entities", {})
+            logger.info(f"RECIPE_REQUEST: Entidades detectadas por API NLP: {entities}")
+            
+            # Convertir entidades a lista de ingredientes
+            if isinstance(entities, dict):
+                ingredients = list(entities.values())
+            elif isinstance(entities, list):
+                ingredients = entities
+            else:
+                # Intentar fallback con extract_food_items_sync
+                logger.info(f"RECIPE_REQUEST: Formato de entidades desconocido, usando extract_food_items_sync")
+                ingredients = food_processor.extract_food_items_sync(text, user_id)
+            
+            logger.info(f"RECIPE_REQUEST: Ingredientes extraídos del texto: {ingredients}")
+        else:
+            # Si no es sobre alimentos, mostrar mensaje generado por la API
+            logger.info(f"RECIPE_REQUEST: API NLP indica que no hay alimentos en: '{text}'")
+            update.message.reply_text(
+                nlp_result.get("generated_text", 
+                "No he podido identificar ingredientes en tu mensaje. Por favor, especifica mejor los ingredientes separados por comas, como: arroz, huevo, brócoli."),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=get_main_menu_keyboard()
+            )
+            return MAIN_MENU
     
+    # Si no hay ingredientes, informar al usuario
     if not ingredients:
+        logger.info(f"RECIPE_REQUEST: No se encontraron ingredientes en: '{text}'")
         update.message.reply_text(
-            "No he podido identificar ingredientes. Por favor, especifica mejor los ingredientes separados por comas, como:\n"
+            "No he podido identificar ingredientes en tu mensaje. Por favor, especifica mejor los ingredientes separados por comas, como:\n"
+            "*arroz, huevo, brócoli*",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_main_menu_keyboard()
+        )
+        return MAIN_MENU
+    
+    # VERIFICACIÓN ADICIONAL: Validar que todos los ingredientes son alimentos antes de continuar
+    valid_ingredients = []
+    invalid_ingredients = []
+    
+    logger.info(f"RECIPE_REQUEST: Validando {len(ingredients)} ingredientes extraídos")
+    for ingredient in ingredients:
+        # Verificar si realmente es un alimento usando la función is_food_related
+        logger.info(f"RECIPE_REQUEST: Verificando si '{ingredient}' es un alimento")
+        is_food = food_processor.is_food_related(ingredient, user_id)
+        logger.info(f"RECIPE_REQUEST: Resultado para '{ingredient}': {'ES alimento' if is_food else 'NO ES alimento'}")
+        
+        if is_food:
+            valid_ingredients.append(ingredient)
+            logger.info(f"RECIPE_REQUEST: '{ingredient}' añadido a ingredientes válidos")
+        else:
+            invalid_ingredients.append(ingredient)
+            logger.info(f"RECIPE_REQUEST: '{ingredient}' añadido a ingredientes inválidos")
+    
+    # VERIFICACIÓN FINAL CON GEMINI PARA CASOS DUDOSOS
+    # Si tenemos mezcla de ingredientes válidos e inválidos, hacer una verificación adicional
+    if valid_ingredients and invalid_ingredients:
+        logger.info(f"RECIPE_REQUEST: Se encontraron ingredientes mixtos. Verificando con Gemini")
+        try:
+            # Verificar cada ingrediente inválido una última vez
+            still_invalid = []
+            for ingredient in invalid_ingredients:
+                prompt = f"""
+                ¿La palabra "{ingredient}" se refiere a un alimento que los humanos consumen?
+                Responde SOLO con SI o NO.
+                """
+                
+                response = food_processor.model.generate_content(prompt)
+                answer = response.text.strip().upper()
+                logger.info(f"RECIPE_REQUEST: Verificación final con Gemini para '{ingredient}': '{answer}'")
+                
+                if "SI" in answer or "SÍ" in answer:
+                    logger.info(f"RECIPE_REQUEST: Gemini confirmó que '{ingredient}' ES alimento")
+                    valid_ingredients.append(ingredient)
+                else:
+                    logger.info(f"RECIPE_REQUEST: Gemini confirmó que '{ingredient}' NO es alimento")
+                    still_invalid.append(ingredient)
+            
+            # Actualizar lista de ingredientes inválidos
+            invalid_ingredients = still_invalid
+        except Exception as e:
+            logger.error(f"RECIPE_REQUEST: Error en verificación final: {str(e)}")
+            # Mantener listas originales en caso de error
+    
+    # Si hay ingredientes inválidos, mostrar mensaje informativo
+    if invalid_ingredients:
+        invalid_text = ", ".join(invalid_ingredients)
+        logger.info(f"RECIPE_REQUEST: Rechazando ingredientes inválidos: {invalid_ingredients}")
+        update.message.reply_text(
+            f"Lo siento, no puedo crear una receta con los siguientes ingredientes que no son alimentos: *{invalid_text}*\n\n"
+            "Por favor, intenta nuevamente sólo con alimentos.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=get_main_menu_keyboard()
+        )
+        return MAIN_MENU
+    
+    # Si no quedan ingredientes válidos después del filtrado
+    if not valid_ingredients:
+        logger.info(f"RECIPE_REQUEST: No quedaron ingredientes válidos después del filtrado")
+        update.message.reply_text(
+            "No he podido identificar alimentos válidos en tu mensaje. Por favor, especifica ingredientes como:\n"
             "*arroz, huevo, brócoli*",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=get_main_menu_keyboard()
@@ -1498,21 +2528,22 @@ def handle_recipe_request(update: Update, context: CallbackContext) -> int:
         return MAIN_MENU
     
     # Mensaje de espera
+    logger.info(f"RECIPE_REQUEST: Procesando receta con ingredientes válidos: {valid_ingredients}")
     wait_message = update.message.reply_text("Buscando recetas... ⏳")
     
     try:
         # Traducir ingredientes al inglés para buscar en dataset
         english_ingredients = []
-        for ingredient in ingredients:
+        for ingredient in valid_ingredients:
             try:
-                # Usar Gemini para traducción (a través del procesador de alimentos extendido)
-                translated = food_processor.translate_text_sync(ingredient, source_lang="es", target_lang="en")
+                translated = food_processor.translate_text_sync(ingredient, "es", "en")
                 english_ingredients.append(translated)
+                logger.info(f"RECIPE_REQUEST: Traducido '{ingredient}' a '{translated}'")
             except Exception as e:
-                logger.error(f"Error traduciendo ingrediente {ingredient}: {str(e)}")
+                logger.error(f"RECIPE_REQUEST: Error traduciendo ingrediente {ingredient}: {str(e)}")
                 english_ingredients.append(ingredient)  # Usar original si falla
         
-        logger.info(f"Ingredientes traducidos: {english_ingredients}")
+        logger.info(f"RECIPE_REQUEST: Ingredientes traducidos: {english_ingredients}")
         
         # Buscar receta en dataset FoodCom
         recipe_found = False
@@ -1564,7 +2595,8 @@ def handle_recipe_request(update: Update, context: CallbackContext) -> int:
                             "description": spanish_description,
                             "source": "foodcom",
                             "original_query": text,
-                            "original_ingredients": ingredients
+                            "original_ingredients": valid_ingredients,
+                            "translated_ingredients": english_ingredients
                         }
                         break
         except Exception as e:
@@ -1575,23 +2607,28 @@ def handle_recipe_request(update: Update, context: CallbackContext) -> int:
         if not recipe_data:
             try:
                 # Construir prompt para Gemini para generar receta en español
+                ingredients_str = ", ".join(valid_ingredients)
                 prompt = f"""
-                TAREA: Genera una receta en español usando estos ingredientes: {', '.join(ingredients)}.
+                TAREA: Genera una receta en español usando estos ingredientes: {ingredients_str}.
                 
                 INSTRUCCIONES:
+                - La receta debe ser COMPLETAMENTE EN ESPAÑOL
                 - La receta debe ser sencilla y fácil de preparar
-                - Incluye un nombre atractivo para la receta
-                - Proporciona una breve descripción
-                - Lista todos los ingredientes necesarios
+                - Incluye un nombre creativo y atractivo para la receta
+                - Proporciona una breve descripción que incluya beneficios nutricionales
+                - Lista todos los ingredientes necesarios con cantidades
                 - Proporciona instrucciones paso a paso para la preparación
+                - Incluye algún consejo de preparación o valor nutricional al final
                 - Responde SOLAMENTE en formato JSON con esta estructura exacta:
                 {{
                   "name": "Nombre de la receta",
                   "description": "Breve descripción",
-                  "ingredients": ["Ingrediente 1", "Ingrediente 2", "..."],
-                  "steps": ["Paso 1: ...", "Paso 2: ...", "..."]
+                  "ingredients": ["Ingrediente 1 con cantidad", "Ingrediente 2 con cantidad", "..."],
+                  "steps": ["Paso 1: ...", "Paso 2: ...", "..."],
+                  "tip": "Consejo nutricional o de preparación"
                 }}
                 - No incluyas comentarios ni texto adicional, solo el JSON
+                - TODA LA INFORMACIÓN DEBE ESTAR EN ESPAÑOL
                 
                 RECETA:
                 """
@@ -1602,6 +2639,8 @@ def handle_recipe_request(update: Update, context: CallbackContext) -> int:
                 
                 # Parsear el JSON de la respuesta
                 import re
+                import json
+                
                 # Extraer solo el JSON si hay texto adicional
                 json_match = re.search(r'({.*})', recipe_text, re.DOTALL)
                 if json_match:
@@ -1612,30 +2651,53 @@ def handle_recipe_request(update: Update, context: CallbackContext) -> int:
                 # Añadir metadatos
                 recipe_data["source"] = "gemini"
                 recipe_data["original_query"] = text
-                recipe_data["original_ingredients"] = ingredients
+                recipe_data["original_ingredients"] = valid_ingredients
                 
             except Exception as e:
                 logger.error(f"Error generando receta con Gemini: {str(e)}", exc_info=True)
                 
-                # Receta fallback si falla Gemini
-                recipe_data = {
-                    "name": f"Receta con {', '.join(ingredients[:3])}",
-                    "description": f"Receta sencilla usando {', '.join(ingredients)}",
-                    "ingredients": ingredients,
-                    "steps": [
-                        "Paso 1: Preparar todos los ingredientes.",
-                        f"Paso 2: Cocinar {ingredients[0]} según sus instrucciones habituales.",
-                        "Paso 3: Añadir el resto de ingredientes y mezclar bien.",
-                        "Paso 4: Cocinar a fuego medio hasta que esté listo.",
-                        "Paso 5: Servir caliente."
-                    ],
-                    "source": "fallback",
-                    "original_query": text,
-                    "original_ingredients": ingredients
-                }
+                # Obtener un mensaje personalizado de Gemini para el error
+                try:
+                    error_prompt = f"""
+                    Genera un mensaje amigable y en español explicando que no se pudo crear una receta con estos ingredientes: {', '.join(valid_ingredients)}.
+                    Incluye una disculpa, una posible razón y una sugerencia para el usuario.
+                    El mensaje debe ser breve (máximo 3 frases) y estar completamente en español.
+                    """
+                    error_response = food_processor.model.generate_content(error_prompt)
+                    error_message = error_response.text.strip()
+                    
+                    # Eliminar mensaje de espera
+                    context.bot.delete_message(
+                        chat_id=update.effective_chat.id,
+                        message_id=wait_message.message_id
+                    )
+                    
+                    update.message.reply_text(
+                        error_message,
+                        reply_markup=get_main_menu_keyboard()
+                    )
+                    return MAIN_MENU
+                    
+                except:
+                    # Receta fallback si falla Gemini por completo
+                    recipe_data = {
+                        "name": f"Receta con {', '.join(valid_ingredients[:3])}",
+                        "description": f"Receta sencilla usando {', '.join(valid_ingredients)}",
+                        "ingredients": [f"{ing} - cantidad al gusto" for ing in valid_ingredients],
+                        "steps": [
+                            "Paso 1: Preparar todos los ingredientes.",
+                            f"Paso 2: Cocinar {valid_ingredients[0]} según sus instrucciones habituales.",
+                            "Paso 3: Añadir el resto de ingredientes y mezclar bien.",
+                            "Paso 4: Cocinar a fuego medio hasta que esté listo.",
+                            "Paso 5: Servir caliente."
+                        ],
+                        "source": "fallback",
+                        "original_query": text,
+                        "original_ingredients": valid_ingredients
+                    }
         
         # Guardar la receta en memory_recetas.json
-        json_path = save_recipe_to_json(recipe_data, user_id=update.effective_user.id)
+        json_path = save_recipe_to_json(recipe_data, user_id=user_id)
         
         # Crear mensaje de respuesta
         response = f"🧪 *{recipe_data['name']}*\n\n"
@@ -1650,11 +2712,18 @@ def handle_recipe_request(update: Update, context: CallbackContext) -> int:
         for i, step in enumerate(recipe_data['steps'], 1):
             response += f"{i}. {step}\n"
         
+        # Añadir consejo si existe
+        if "tip" in recipe_data and recipe_data["tip"]:
+            response += f"\n💡 *Consejo:* {recipe_data['tip']}\n"
+        
         # Eliminar mensaje de espera y mostrar resultado
-        context.bot.delete_message(
-            chat_id=update.effective_chat.id,
-            message_id=wait_message.message_id
-        )
+        try:
+            context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=wait_message.message_id
+            )
+        except Exception as e:
+            logger.error(f"Error eliminando mensaje de espera: {str(e)}")
         
         update.message.reply_text(
             response,
@@ -1672,10 +2741,22 @@ def handle_recipe_request(update: Update, context: CallbackContext) -> int:
         except:
             pass
             
-        update.message.reply_text(
-            "Lo siento, tuve un problema generando la receta. Por favor, intenta de nuevo.",
-            reply_markup=get_main_menu_keyboard()
-        )
+        # Intentar generar un mensaje de error personalizado
+        try:
+            error_prompt = "Genera un mensaje corto y amable en español para disculparse por un error al generar una receta. Máximo 2 frases."
+            error_response = food_processor.model.generate_content(error_prompt)
+            error_message = error_response.text.strip()
+            
+            update.message.reply_text(
+                error_message,
+                reply_markup=get_main_menu_keyboard()
+            )
+        except:
+            # Mensaje de error fallback
+            update.message.reply_text(
+                "Lo siento, tuve un problema generando la receta. Por favor, intenta de nuevo.",
+                reply_markup=get_main_menu_keyboard()
+            )
     
     return MAIN_MENU
 

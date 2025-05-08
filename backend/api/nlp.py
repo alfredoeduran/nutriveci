@@ -55,19 +55,52 @@ def gemini_generate_structured(text: str, user_context: str = "") -> dict:
     """Genera una respuesta estructurada usando Gemini con reintentos automáticos."""
     prompt = f"""
 Eres un asistente nutricional inteligente. Analiza el siguiente mensaje del usuario y responde en formato JSON con los siguientes campos:
+- "is_food": booleano que indica si el mensaje contiene alimentos o temas relacionados con la nutrición (true) o no (false)
 - "intent": intención principal del usuario (por ejemplo: buscar_receta, pedir_consejo, consultar_ingrediente, saludo, despedida, etc)
 - "entities": lista de ingredientes, condiciones de salud o conceptos relevantes mencionados (por ejemplo: ["pollo", "diabetes", "sin gluten"])
 - "generated_text": respuesta conversacional adecuada para el usuario
 
-Ejemplo de respuesta:
+IMPORTANTE: Para determinar si "is_food" es true, SOLO considera verdaderos alimentos, ingredientes o temas nutricionales. 
+Palabras como "puerta", "casa", "libro", "auto" o similares que no son comestibles DEBEN marcarse como is_food: false.
+
+Lista de ejemplos de NO alimentos (is_food: false):
+- Puerta, ventana, casa, edificio
+- Auto, carro, tren, avión
+- Libro, revista, periódico
+- Ropa, zapatos, sombrero
+- Computadora, teléfono, tablet
+- Muebles como silla, mesa, sofá
+
+Si "is_food" es false, debes responder con un mensaje amigable en ESPAÑOL que explique las funcionalidades del bot:
+"Soy un asistente nutricional inteligente que puede ayudarte con:
+- Recomendaciones de recetas
+- Consejos nutricionales
+- Información sobre ingredientes
+- Análisis de alimentos
+- Planificación de comidas
+
+¿En qué puedo ayudarte hoy con tus consultas sobre alimentación y nutrición?"
+
+Si "is_food" es true, debes proporcionar información nutricional y sugerencias de recetas con los ingredientes mencionados. TODA LA RESPUESTA DEBE SER EN ESPAÑOL, incluso si los datos vienen de fuentes en inglés, TRADUCE todo al español.
+
+Ejemplo de respuesta cuando es sobre alimentos:
 {{
+  "is_food": true,
   "intent": "buscar_receta",
   "entities": ["pollo", "sin gluten"],
-  "generated_text": "Aquí tienes una receta de pollo sin gluten que te puede interesar..."
+  "generated_text": "El pollo es una excelente fuente de proteínas magras. Aquí tienes una receta de pollo sin gluten que te puede interesar..."
+}}
+
+Ejemplo cuando no es sobre alimentos:
+{{
+  "is_food": false,
+  "intent": "otro",
+  "entities": [],
+  "generated_text": "Soy un asistente nutricional inteligente que puede ayudarte con: ..."
 }}
 
 Mensaje del usuario: "{text}"
-Responde SOLO en JSON válido.
+Responde SOLO en JSON válido. TODA LA RESPUESTA debe estar COMPLETAMENTE EN ESPAÑOL.
 
 Contexto del usuario:
 {user_context}
@@ -90,11 +123,12 @@ Contexto del usuario:
             data = json.loads(json_str)
             
             # Validar estructura de respuesta
-            required_fields = ["intent", "entities", "generated_text"]
+            required_fields = ["intent", "entities", "generated_text", "is_food"]
             if not all(field in data for field in required_fields):
                 raise GeminiError("Respuesta de Gemini no contiene todos los campos requeridos")
                 
             return {
+                "is_food": data.get("is_food", False),
                 "intent": data.get("intent", "desconocido"),
                 "entities": data.get("entities", []),
                 "generated_text": data.get("generated_text", response.text)
@@ -174,9 +208,9 @@ async def interpret_text(request: NLPRequest):
         else:
             entities_list = list(entities.values())
             
-        # Buscar recetas si la intención es buscar_receta
+        # Buscar recetas si la intención es buscar_receta y el input es sobre alimentos
         recetas_sugeridas = []
-        if result["intent"] == "buscar_receta" and entities_list:
+        if result.get("is_food", False) and result["intent"] == "buscar_receta" and entities_list:
             try:
                 # Buscar recetas que contengan los ingredientes mencionados
                 recetas = await crud.search_recipes_by_ingredients(entities_list, limit=3)
