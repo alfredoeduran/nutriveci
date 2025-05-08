@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     WHATSAPP_TWILIO_AUTH_TOKEN: Optional[str] = None
     WHATSAPP_PHONE_NUMBER: Optional[str] = None
     
+    # Clarifai
+    CLARIFAI_PAT: Optional[str] = None
+    CLARIFAI_USER_ID: Optional[str] = None
+    CLARIFAI_APP_ID: Optional[str] = None
+    CLARIFAI_MODEL_ID: Optional[str] = None
+    CLARIFAI_MODEL_VERSION_ID: Optional[str] = None
+    
     @validator("ENVIRONMENT")
     def environment_must_be_valid(cls, v: str) -> str:
         valid_environments = ["development", "staging", "production"]

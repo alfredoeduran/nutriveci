@@ -18,8 +18,8 @@ class FoodDetector:
         self.PAT = os.getenv("CLARIFAI_PAT", "d14555c665f14af59a2be1bd74a8d6c6")
         self.USER_ID = "clarifai"
         self.APP_ID = "main"
-        self.MODEL_ID = "food-item-recognition"
-        self.MODEL_VERSION_ID = "1d5fd481e0cf4826aa72ec3ff049e044"
+        self.MODEL_ID = os.getenv("CLARIFAI_MODEL_ID", "food-item-recognition")
+        self.MODEL_VERSION_ID = os.getenv("CLARIFAI_MODEL_VERSION_ID", "1d5fd481e0cf4826aa72ec3ff049e044")
         
         # Configurar canal y stub
         self.channel = ClarifaiChannel.get_grpc_channel()
