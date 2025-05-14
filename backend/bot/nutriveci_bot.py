@@ -1078,17 +1078,28 @@ def start(update: Update, context: CallbackContext) -> int:
     # Ruta a la imagen de bienvenida
     image_path = os.path.join(ROOT_DIR, "data", "resources", "nutriveci3d.png")
     
-    try:
-        # Enviar imagen de bienvenida
-        with open(image_path, 'rb') as photo:
-            update.message.reply_photo(
-                photo=photo,
-                caption=f"Hola {user.first_name}! 👋\n\n"
+    # Verificar que el archivo existe antes de intentar abrirlo
+    if os.path.exists(image_path):
+        try:
+            # Enviar imagen de bienvenida
+            with open(image_path, 'rb') as photo:
+                update.message.reply_photo(
+                    photo=photo,
+                    caption=f"Hola {user.first_name}! 👋\n\n"
+                    "Soy NutriVeci 🥗, tu asistente nutricional personal.\n\n"
+                    "¿Qué te gustaría hacer hoy?",
+                    reply_markup=get_main_menu_keyboard()
+                )
+        except Exception as e:
+            # Si hay algún error al enviar la imagen, registrarlo y enviar mensaje sin imagen
+            logger.error(f"Error enviando imagen de bienvenida: {str(e)}")
+            update.message.reply_text(
+                f"Hola {user.first_name}! 👋\n\n"
                 "Soy NutriVeci 🥗, tu asistente nutricional personal.\n\n"
                 "¿Qué te gustaría hacer hoy?",
                 reply_markup=get_main_menu_keyboard()
             )
-    except FileNotFoundError:
+    else:
         # Si no encuentra la imagen, continuar sin ella
         logger.warning(f"Imagen de bienvenida no encontrada en {image_path}")
         update.message.reply_text(
@@ -1169,12 +1180,24 @@ def button_handler(update: Update, context: CallbackContext) -> int:
             parse_mode: Modo de análisis para el texto (opcional)
         """
         try:
-            # Intentar editar el mensaje existente
-            query.edit_message_text(
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
+            # Verificar si el mensaje original tiene imagen (no se puede editar con edit_message_text)
+            has_photo = query.message.photo or (hasattr(query.message, 'effective_attachment') and query.message.effective_attachment)
+            
+            if has_photo:
+                # Si el mensaje tiene foto, enviar un nuevo mensaje en lugar de editar
+                context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+            else:
+                # Intentar editar el mensaje existente
+                query.edit_message_text(
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
         except BadRequest as e:
             error_msg = str(e).lower()
             # Manejar diferentes tipos de errores de BadRequest
@@ -1234,10 +1257,22 @@ def button_handler(update: Update, context: CallbackContext) -> int:
     # Manejo de los diferentes botones
     if data == 'main_menu':
         try:
-            query.edit_message_text(
-                "Menú Principal - Selecciona una opción:",
-                reply_markup=get_main_menu_keyboard()
-            )
+            # Verificar si el mensaje original tiene imagen
+            has_photo = query.message.photo or (hasattr(query.message, 'effective_attachment') and query.message.effective_attachment)
+            
+            if has_photo:
+                # Si tiene foto, enviar un nuevo mensaje en lugar de editar
+                context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="Menú Principal - Selecciona una opción:",
+                    reply_markup=get_main_menu_keyboard()
+                )
+            else:
+                # Si no tiene foto, editar normalmente
+                query.edit_message_text(
+                    "Menú Principal - Selecciona una opción:",
+                    reply_markup=get_main_menu_keyboard()
+                )
         except Exception as e:
             logger.error(f"Error editando mensaje: {str(e)}")
             # Intenta enviar un nuevo mensaje en lugar de editar
@@ -1249,7 +1284,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         return MAIN_MENU
         
     elif data == 'food_input':
-        query.edit_message_text(
+        send_response_safely(
             "🥗 *Consultar alimento*\n\n"
             "Escribe el nombre de un alimento o selecciona uno de los sugeridos:",
             reply_markup=get_food_input_keyboard(),
@@ -1258,7 +1293,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         return TEXT_FOOD
         
     elif data == 'meal_input':
-        query.edit_message_text(
+        send_response_safely(
             "🍽️ *Ingresar plato completo*\n\n"
             "¿Cómo quieres ingresar tu plato?",
             reply_markup=get_complete_meal_menu_keyboard(),
@@ -1267,7 +1302,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         return COMPLETE_MEAL_MENU
         
     elif data == 'meal_text':
-        query.edit_message_text(
+        send_response_safely(
             "📝 Por favor, escribe los alimentos de tu plato separados por comas.\n"
             "Ejemplo: *pollo, arroz, ensalada*",
             parse_mode=ParseMode.MARKDOWN
@@ -1275,7 +1310,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         return TEXT_FOOD
         
     elif data == 'meal_image':
-        query.edit_message_text(
+        send_response_safely(
             "🖼️ Por favor, envía una foto de tu plato y analizaré los alimentos que contiene."
         )
         return IMAGE_FOOD
@@ -1285,7 +1320,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         history = user_info["history"]
         
         if not history:
-            query.edit_message_text(
+            send_response_safely(
                 "No tienes búsquedas recientes.",
                 reply_markup=get_main_menu_keyboard()
             )
@@ -1296,7 +1331,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
                 calories = item["calories"] if item["calories"] is not None else "N/A"
                 history_text += f"{i}. {food_name}: {calories} kcal\n"
             
-            query.edit_message_text(
+            send_response_safely(
                 history_text,
                 reply_markup=get_action_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
@@ -1307,7 +1342,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         user_info = get_user_data(user_id)
         daily_calories = user_info["daily_calories"]
         
-        query.edit_message_text(
+        send_response_safely(
             f"📊 *Calorías acumuladas hoy:* {daily_calories:.1f} kcal\n\n"
             "Recuerda que una dieta balanceada es importante para mantener una buena salud. "
             "El número de calorías diarias recomendadas varía según edad, sexo, peso y nivel de actividad física.",
@@ -1320,7 +1355,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         user_info = get_user_data(user_id)
         user_info["history"] = []
         
-        query.edit_message_text(
+        send_response_safely(
             "✅ Historial limpiado correctamente.",
             reply_markup=get_main_menu_keyboard()
         )
@@ -1331,7 +1366,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         history = user_info["history"]
         
         if not history:
-            query.edit_message_text(
+            send_response_safely(
                 "No hay alimentos recientes en tu historial.",
                 reply_markup=get_main_menu_keyboard()
             )
@@ -1342,7 +1377,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
                 calories = item["calories"] if item["calories"] is not None else "N/A"
                 recent_text += f"{i}. {food_name}: {calories} kcal\n"
             
-            query.edit_message_text(
+            send_response_safely(
                 recent_text,
                 reply_markup=get_main_menu_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
@@ -1351,7 +1386,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
     
     elif data == 'create_recipe':
         # Iniciar proceso de creación de receta
-        query.edit_message_text(
+        send_response_safely(
             "🧪 *Crear receta nueva*\n\n"
             "Por favor, escribe el nombre de tu receta:",
             parse_mode=ParseMode.MARKDOWN
@@ -1371,7 +1406,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
         # Ver recetas guardadas
         try:
             # Mensajes de carga
-            query.edit_message_text("Cargando tus recetas... ⏳")
+            send_response_safely("Cargando tus recetas... ⏳")
             
             # Cargar recetas desde el archivo local filtradas por usuario
             local_recipes = load_saved_recipes(limit=20, user_id=user_id)
@@ -1420,13 +1455,13 @@ def button_handler(update: Update, context: CallbackContext) -> int:
                     seen_ids.add(recipe_id)
             
             if not combined_recipes:
-                query.edit_message_text(
+                send_response_safely(
                     "No tienes recetas guardadas.",
                     reply_markup=get_main_menu_keyboard()
                 )
             else:
                 # Mostrar las recetas guardadas
-                query.edit_message_text(
+                send_response_safely(
                     "📚 *Tus recetas guardadas*\n\n"
                     "Selecciona una receta para ver detalles:",
                     parse_mode=ParseMode.MARKDOWN
@@ -1450,7 +1485,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
                     )
         except Exception as e:
             logger.error(f"Error al mostrar recetas: {str(e)}")
-            query.edit_message_text(
+            send_response_safely(
                 "Ocurrió un error al cargar las recetas.",
                 reply_markup=get_main_menu_keyboard()
             )
@@ -1785,7 +1820,7 @@ def button_handler(update: Update, context: CallbackContext) -> int:
     
     elif data == 'request_recipe':
         # Solicitar receta a partir de ingredientes
-        query.edit_message_text(
+        send_response_safely(
             "🔍 *Solicitar receta*\n\n"
             "Por favor, escribe los ingredientes que tienes disponibles, separados por comas.\n"
             "Ejemplo: *arroz, huevo, brócoli*\n\n"
