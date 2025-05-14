@@ -139,4 +139,20 @@ build/
 # Archivos de backup
 *.bak
 *.backup
-*~ 
+*~
+
+# Datasets
+datasets/
+data/
+raw_data/
+processed_data/
+*.csv
+*.xlsx
+*.xls
+*.json
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.pkl
+*.pickle 
