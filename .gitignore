@@ -92,4 +92,51 @@ coverage.xml
 .python-version
 
 # Excepciones de archivos específicos para este proyecto
-!requirements.txt 
+!requirements.txt
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Directorios de dependencias
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Archivos de entorno
+.env
+.env.local
+
+# Archivos de IDE
+.vscode/
+.idea/
+
+# Archivos de build
+dist/
+build/
+*.log
+
+# Archivos de datos grandes
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos multimedia
+*.mp4
+*.mov
+*.avi
+*.mp3
+*.wav
+*.pdf
+*.zip
+*.rar
+*.7z
+
+# Archivos de backup
+*.bak
+*.backup
+*~ 
